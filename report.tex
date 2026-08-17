@@ -48,7 +48,7 @@
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
-% --- Цветные блоки ---
+% --- Цветные блоков ---
 \newmdenv[backgroundcolor=lightgray, linecolor=primary, linewidth=2pt,
 leftline=true, rightline=false, topline=false, bottomline=false,
 innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{infobox}
@@ -149,102 +149,105 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	Параметр \texttt{stride} (шаг смещения anchor date) критически влияет на качество. При $stride=7$ и $target=30$ возникало 77\%-е перекрытие таргетов между фолдами, что приводило к сильному переобучению алгоритмов (в частности, Optuna). Оптимальным решением признан $stride=14$.
 	
 	% ================================================================
-	\section{История экспериментов: Итерации v1 --- v3}
+	\section{Эволюция признакового пространства}
 	
-	В процессе разработки пайплайн прошёл через 3 крупные итерации, выявившие ключевые проблемы данных:
+	В процессе разработки пайплайн прошёл через несколько итераций, выявивших ключевые зависимости. 
+	Финальным прорывом стала итерация \textbf{v4}, где были применены следующие принципы:
+	\begin{enumerate}
+		\item \textbf{Окна полной истории:} добавлены агрегации за 270d и 365d (использование всей истории в 407 дней).
+		\item \textbf{Новые срезы:} \texttt{gmv\_search}, \texttt{gmv\_cat}, бинарные флаги \texttt{search}/\texttt{cat}.
+		\item \textbf{RFM-метрики:} добавлены frequency (\texttt{freq\_cart}, \texttt{active\_days}) и recency (\texttt{recency\_cart\_days}, \texttt{user\_age\_days}).
+	\end{enumerate}
 	
-	\begin{table}[h!]
-		\centering\caption{Ретроспектива итераций v1 -- v3}
-		\begin{tabular}{lll}
-			\toprule
-			\textbf{Версия} & \textbf{Достижения и проблемы} & \textbf{Лучший RMSLE} \\
-			\midrule
-			\textbf{v1} & Baseline CatBoost на 60 фичах. Stride=7. & \rmsleGood{1.6703} \\
-			\midrule
-			\textbf{v2} & Увеличение до 440 фичей. Утечка данных из-за & \multirow{2}{*}{\rmsleBad{1.6880}} \\
-			& stride=7 сломала подбор параметров Optuna.   & \\
-			\midrule
-			\textbf{v3} & Исправлен stride=30 (нет перекрытия). Внедрён & \multirow{2}{*}{\rmsleNeutral{1.6711}} \\
-			& LightGBM и Feature Selection (топ-150 фичей). & \\
-			\bottomrule
-		\end{tabular}
-	\end{table}
+	Анализ Feature Importance выявил абсолютное доминирование долгосрочных агрегатов (365d, 270d) и метрик недавности (\texttt{recency\_ord\_days}).
 	
-	\begin{warningbox}
-		\textbf{Проблема мультиколлинеарности моделей в v3:}\\
-		Анализ ансамбля показал, что предсказания CatBoost v3 и LightGBM v3 имеют корреляцию Пирсона $0.9927$ --- фактически они полностью идентичны. Единственный ортогональный сигнал давала модель RNN ($\rho \approx 0.93$).
-	\end{warningbox}
+	% ================================================================
+	\section{Архитектура базовых моделей}
+	
+	\subsection{CatBoostRegressor (Чемпион)}
+	Градиентный бустинг с \emph{level-wise} построением деревьев. Обучение производилось по схеме \textbf{Single-Fold} на 392 признаках v4. Модель отлично справилась с извлечением сложных нелинейных зависимостей из агрегатов, выдав лучший одиночный результат \rmsleGood{1.66049}.
+	
+	\subsection{LightGBM}
+	Градиентный бустинг с \emph{leaf-wise} сплитом. Настроен через Optuna с использованием тех же данных (v4). Благодаря другой архитектуре построения деревьев, модель формирует иное распределение ошибок, что отлично подходит для внутривидовой диверсификации бустингов.
+	
+	\subsection{Рекуррентная нейронная сеть (PyTorch GRU)}
+	В отличие от бустингов, которые оперируют статичными историческими агрегатами (sum, max, mean), \textbf{RNN учитывает секвенциальную природу данных}. 
+	
+	\textbf{Архитектура:}
+	\begin{itemize}[nosep]
+		\item \textbf{Input:} Временные ряды (\texttt{SEQ\_LEN=120} дней) по 10 признакам (действия в каталоге, поиске, корзине, GMV).
+		\item \textbf{Core:} 3-слойный GRU (hidden\_dim=192, dropout=0.3).
+		\item \textbf{Head:} Fully Connected слои с LayerNorm и GELU активациями.
+		\item \textbf{Обучение:} Optimizer AdamW + CosineAnnealingLR, Loss: MSE на log1p таргете.
+	\end{itemize}
+	
+	\begin{successbox}
+		\textbf{Роль RNN в пайплайне:}\\
+		Анализ ансамблей показал, что CatBoost и LightGBM коррелируют между собой на $\approx 0.99$ (они практически идентичны). Однако корреляция Пирсона между CatBoost и RNN составляет всего $\approx 0.93$. Именно RNN обеспечивает необходимую \textbf{ортогональность ошибок}, что делает её идеальным компонентом для финальных блендов.
+	\end{successbox}
 	
 	% ================================================================
 	\section{Альтернативные подходы: BTYD и Two-Stage}
 	
-	Для решения проблемы завышенных нулей (zero-inflation) были реализованы специализированные подходы.
+	Для решения проблемы завышенных нулей (zero-inflation) были протестированы специализированные подходы.
 	
 	\subsection{BTYD (BG/NBD + Gamma-Gamma)}
 	Классическая вероятностная модель поведения покупателей (ноутбук \texttt{7\_btyd.ipynb}). 
 	Модель BG/NBD оценивала частоту покупок и вероятность оттока $P(alive)$, а Gamma-Gamma --- средний чек.
-	\textbf{Результат:} Модель сильно завысила ожидания. Средний предсказанный LTV составил 85.17, что критически оторвано от реальности лучших ML-моделей (средний предикт $\approx 35.35$). Отправка чистого сабмита признана нецелесообразной.
+	\textbf{Результат:} Модель сильно завысила ожидания (средний предсказанный LTV = 85.17, против $\approx 35.35$ у CatBoost). Отправка чистого сабмита признана нецелесообразной.
 	
-	\subsection{Two-Stage Model}
+	\subsection{Two-Stage Model и метод «Zero-Hack»}
 	Двухэтапная архитектура (ноутбук \texttt{6\_two\_stage.ipynb}):
 	\begin{itemize}[nosep]
-		\item \textbf{Stage 1:} CatBoostClassifier предсказывает $P(GMV > 0)$.
-		\item \textbf{Stage 2:} CatBoostRegressor обучается \emph{только} на покупателях ($E[GMV | buy]$).
+		\item \textbf{Stage 1:} \texttt{CatBoostClassifier} предсказывает $P(GMV > 0)$.
+		\item \textbf{Stage 2:} \texttt{CatBoostRegressor} обучается \emph{только} на покупателях ($E[GMV | buy]$).
 	\end{itemize}
-	\textbf{Результат:} Как самостоятельная модель Two-Stage проиграла бейзлайну (лучший RMSLE: 1.90800). Однако \textbf{Stage 1 классификатор дал важнейший инсайт}: анализ показал, что оптимальный порог вероятности покупки составляет $P(buy) = 0.46$.
+	Как самостоятельная модель Two-Stage проиграла бейзлайну. Однако классификатор из \textbf{Stage 1} дал важнейший инсайт: оптимальный порог вероятности покупки составляет $P(buy) = 0.46$.
 	
-	\begin{successbox}
-		\textbf{Метод «Zero-Hack»:}\\
-		Предсказания $P(buy)$ из классификатора можно использовать как маску для лучших регрессоров. Зануление предиктов пользователей с $P(buy) < 0.46$ локально улучшило RMSLE модели Two-Stage с 2.04 до 1.90. Этот хак будет применён к финальному ансамблю.
-	\end{successbox}
+	\begin{infobox}
+		\textbf{Внедрение «Zero-Hack»:}\\
+		Предсказания $P(buy)$ из классификатора используются как маска. Зануление предиктов пользователей с $P(buy) < 0.46$ спасает регрессоры от штрафа за предсказание мелких сумм для "спящих" клиентов. Этот метод применяется поверх лучших ML-предсказаний.
+	\end{infobox}
 	
 	% ================================================================
-	\section{Итерация v4: Прорыв (Текущий чемпион)}
+	\section{Сводная таблица сабмитов (Leaderboard)}
 	
-	Возврат к принципам надежного бейзлайна, но с расширенными горизонтами данных (ноутбук \texttt{8\_data\_v4\_2.ipynb}).
-	
-	\subsection{Философия признакового пространства v4}
-	\begin{enumerate}
-		\item \textbf{Окна полной истории:} добавлены агрегации за 270d и 365d.
-		\item \textbf{Новые срезы:} \texttt{gmv\_search}, \texttt{gmv\_cat}, флаги \texttt{search}/\texttt{cat}.
-		\item \textbf{RFM-метрики:} добавлены frequency (\texttt{freq\_cart}, \texttt{active\_days}) и recency (\texttt{recency\_cart\_days}, \texttt{user\_age\_days}).
-		\item \textbf{Схема валидации:} возврат к $stride=14$ (золотая середина) и \textbf{Single-Fold} обучению.
-	\end{enumerate}
-	
-	\subsection{CatBoost v4a Baseline}
-	Схема Single-Fold (без переобучающего cumulative-накопления) на новых 392 фичах выдала рекордный результат. Модель самостоятельно отбирала признаки без принудительного Feature Selection.
-	
-	\begin{successbox}
-		\textbf{Результат CatBoost v4a на Лидерборде:} \rmsleGood{1.66049}\\
-		Это лучший результат за весь цикл хакатона, приблизивший решение к лидеру платформы (1,6461846817).
-	\end{successbox}
+	Ниже представлена полная история отправок решений на платформу, демонстрирующая поэтапное улучшение алгоритмов (отсортировано по улучшению метрики).
 	
 	\begin{table}[h!]
-		\centering\caption{Топ-10 признаков (CatBoost v4a)}
-		\begin{tabular}{rlr}
+		\centering\caption{История отправок решений на публичный Лидерборд}
+		\rowcolors{2}{lightgray}{white}
+		\begin{tabular}{llc}
 			\toprule
-			\textbf{\#} & \textbf{Признак} & \textbf{Важность, \%} \\
+			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
 			\midrule
-			1 & \texttt{recency\_ord\_days} & 1.33\% \\
-			2 & \texttt{freq\_ord\_365d} & 1.33\% \\
-			3 & \texttt{user\_age\_days} & 1.29\% \\
-			4 & \texttt{to\_ord\_sum\_365d} & 1.22\% \\
-			5 & \texttt{freq\_ord\_270d} & 1.21\% \\
-			6 & \texttt{freq\_ord\_90d} & 1.18\% \\
-			7 & \texttt{trend\_gmv\_90d\_365d} & 1.11\% \\
-			8 & \texttt{gmv\_search\_sum\_365d} & 0.96\% \\
-			9 & \texttt{freq\_ord\_180d} & 0.92\% \\
-			10 & \texttt{recency\_cat\_days} & 0.88\% \\
+			\rowcolor{bgsuccess}
+			\texttt{catboost\_v4a\_baseline\_submission} & \rmsleGood{1.66049} & \textbf{ЧЕМПИОН (v4)} \\
+			\texttt{catboost\_baseline\_submission} & 1.67028 & Baseline v1 \\
+			\texttt{lgbm\_v3\_submission} & 1.67115 & \\
+			\texttt{catboost\_v3\_submission} & 1.67116 & \\
+			\texttt{catboost\_v4\_cumul\_submission} & 1.67126 & \\
+			\texttt{catboost\_v4\_single\_submission} & 1.67177 & \\
+			\texttt{blend\_cbv3\_80\_rnnv3\_19} & 1.67380 & \\
+			\texttt{blend\_cbv3\_70\_rnnv3\_30} & 1.67583 & \\
+			\texttt{ensemble\_cb70\_rnn30} & 1.67588 & \\
+			\texttt{blend\_cbv3\_65\_rnnv3\_35} & 1.67702 & \\
+			\texttt{ensemble\_v2\_cb70\_rnn30} & \rmsleBad{1.68803} & \\
+			\texttt{ensemble\_v2\_cb60\_rnn40} & \rmsleBad{1.68942} & Утечка v2 \\
+			\texttt{catboost\_v2\_submission} & \rmsleBad{1.69009} & Утечка v2 \\
+			\texttt{rnn\_v2\_submission} & \rmsleBad{1.71792} & Лучшая RNN \\
+			\texttt{rnn\_baseline\_submission} & \rmsleBad{1.73624} & \\
+			\texttt{btyd\_blend\_btyd2\_cb8} & \rmsleBad{1.76655} & \\
+			\texttt{catboost\_tuned\_submission} & \rmsleBad{1.79400} & Провал Optuna v1 \\
+			\texttt{btyd\_blend\_btyd3\_cb7} & \rmsleBad{1.81827} & Переоценка BTYD \\
 			\bottomrule
 		\end{tabular}
 	\end{table}
 	
-	Анализ важности показал абсолютное доминирование долгосрочных агрегатов (365d, 270d) и метрик недавности (recency).
-	
 	% ================================================================
 	\section{Стратегия финальных ансамблей (5 сабмитов)}
 	
-	Учитывая доступный лимит в 5 отправок, стратегия построена на использовании чемпиона \textbf{CatBoost v4a} в качестве базы. Внутривидовые бленды (Single + Cumulative) отменены из-за идентичности датасетов при $N\_FOLDS=2$.
+	Учитывая доступный лимит в 5 отправок, стратегия построена на использовании чемпиона \textbf{CatBoost v4a} в качестве базы.
 	
 	\textbf{Файлы для загрузки на Лидерборд:}
 	\begin{enumerate}
