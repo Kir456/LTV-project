@@ -1,0 +1,282 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[table]{xcolor}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{mdframed}
+\usepackage{listings}
+\usepackage{multirow}
+\setlength{\headheight}{13.6pt}
+
+\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2cm}
+
+% --- Основные Цвета ---
+\definecolor{primary}{RGB}{25, 118, 210}
+\definecolor{success}{RGB}{46, 125, 50}
+\definecolor{warning}{RGB}{230, 81, 0}
+\definecolor{danger}{RGB}{183, 28, 28}
+\definecolor{lightgray}{RGB}{245, 245, 245}
+\definecolor{codegray}{RGB}{240, 240, 240}
+\definecolor{darkgray}{RGB}{66, 66, 66}
+
+% --- Фоновые цвета для блоков ---
+\definecolor{bgsuccess}{RGB}{232, 245, 233}
+\definecolor{bgwarning}{RGB}{255, 243, 224}
+\definecolor{bgdanger}{RGB}{255, 235, 238}
+
+\hypersetup{colorlinks=true, linkcolor=primary, urlcolor=primary}
+
+% --- Заголовки секций ---
+\titleformat{\section}{\Large\bfseries\color{primary}}{\thesection.}{0.5em}{}
+[\vspace{-0.5em}\rule{\linewidth}{0.8pt}\vspace{0.3em}]
+\titleformat{\subsection}{\large\bfseries\color{darkgray}}{\thesubsection.}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection.}{0.5em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{darkgray} Отчёт по хакатону: LTV-предсказание}
+\fancyhead[R]{\small\color{darkgray} Егоров Кирилл}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% --- Цветные блоки ---
+\newmdenv[backgroundcolor=lightgray, linecolor=primary, linewidth=2pt,
+leftline=true, rightline=false, topline=false, bottomline=false,
+innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{infobox}
+
+\newmdenv[backgroundcolor=bgsuccess, linecolor=success, linewidth=2pt,
+leftline=true, rightline=false, topline=false, bottomline=false,
+innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{successbox}
+
+\newmdenv[backgroundcolor=bgwarning, linecolor=warning, linewidth=2pt,
+leftline=true, rightline=false, topline=false, bottomline=false,
+innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{warningbox}
+
+\newmdenv[backgroundcolor=bgdanger, linecolor=danger, linewidth=2pt,
+leftline=true, rightline=false, topline=false, bottomline=false,
+innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
+
+\lstset{backgroundcolor=\color{codegray}, basicstyle=\small\ttfamily,
+	breaklines=true, frame=single, rulecolor=\color{gray}, numbers=left,
+	numberstyle=\tiny\color{gray}, numbersep=5pt, showstringspaces=false}
+
+\newcommand{\rmsleGood}[1]{\textbf{\color{success}#1}}
+\newcommand{\rmsleBad}[1]{\textbf{\color{danger}#1}}
+\newcommand{\rmsleNeutral}[1]{\textbf{\color{primary}#1}}
+
+% ================================================================
+\begin{document}
+	\pagenumbering{roman}
+	
+	\begin{titlepage}
+		\centering\vspace*{2cm}
+		{\Huge\bfseries\color{primary} Технический отчёт}\\[0.5cm]
+		{\Large\bfseries Предсказание LTV пользователей}\\[0.3cm]
+		{\large Хакатон по машинному обучению}\\[2cm]
+		\rule{\textwidth}{1.5pt}\\[0.4cm]
+		{\large\bfseries Задача:} Предсказание суммарного GMV пользователей за 30 дней\\
+		на основе обезличенных данных активности в Поиске и Каталоге\\[0.4cm]
+		\rule{\textwidth}{0.8pt}\\[2cm]
+		\begin{tabular}{ll}
+			\textbf{Участник:}    & Кирилл Егоров \\[0.3cm]
+			\textbf{Метрика:}     & RMSLE (Root Mean Squared Log Error) \\[0.3cm]
+			\textbf{Tie-breaker:} & Gini по предсказаниям + RMSPE суммарного GMV \\[0.3cm]
+			\textbf{Данные:}      & 250\,000 пользователей, 01.01.2025--13.02.2026 \\[0.3cm]
+			\textbf{Текущий ЛБ:}  & \rmsleGood{1.66049} (CatBoost v4a Baseline) \\[0.3cm]
+			\textbf{Публичный ЛБ:}& 20\% (50\,000 клиентов) \\[0.3cm]
+			\textbf{Приватный ЛБ:}& 80\% (200\,000 клиентов) \\[0.3cm]
+			\textbf{Старт:}       & 10 августа 2026 г. \\[0.3cm]
+			\textbf{Дедлайн:}     & $\approx$ 31 августа 2026 г. \\[0.3cm]
+			\textbf{Лимит:}       & 5 сабмитов / день, 2 финальных решения \\[0.3cm]
+			\textbf{GPU:}         & NVIDIA RTX 4050 Laptop (6 ГБ VRAM) \\
+		\end{tabular}
+		\vfill
+		{\small Дата составления: 17 августа 2026 г. (Финальная редакция)}
+	\end{titlepage}
+	
+	\tableofcontents\newpage
+	\pagenumbering{arabic}
+	
+	% ================================================================
+	\section{Описание задачи и данных}
+	
+	\subsection{Постановка задачи}
+	
+	Задача --- предсказание \textbf{Customer Lifetime Value (LTV)} на горизонте 30 дней.
+	Модель должна по истории активности пользователя предсказать суммарный GMV
+	за период с 14.02.2026 по 15.03.2026.
+	
+	\begin{dangerbox}
+		\textbf{Публичный / Приватный лидерборд: 20\% / 80\%!}\\
+		Оценка на публичном лидерборде вычисляется только по 50\,000 из 250\,000 клиентов.
+		Это означает высокий риск \emph{public-private shake-up}.
+	\end{dangerbox}
+	
+	\textbf{Метрика качества:}
+	\[
+	\mathrm{RMSLE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}\bigl(\log(1+\hat{y}_i) - \log(1+y_i)\bigr)^2}
+	\]
+	
+	\subsection{Особенности исходных данных}
+	
+	\begin{infobox}
+		\textbf{Объём:} 30+ млн записей, 250\,000 клиентов\\
+		\textbf{Период:} 01.01.2025 -- 13.02.2026 (407 дней)\\
+		\textbf{Тип:} Прореженные временные ряды (спарс).
+	\end{infobox}
+	
+	Особенности целевой переменной: данные сильно \textbf{zero-inflated}. Около 45.1\% пользователей в обучающей выборке не совершают ни одной покупки (target = 0).
+	
+	% ================================================================
+	\section{Схема валидации: Walk-Forward Cross-Validation}
+	
+	Для временных рядов используется строго \textbf{Walk-Forward CV}.
+	Тестировались два подхода к формированию обучающей выборки:
+	\begin{enumerate}
+		\item \textbf{Single-Fold:} обучение только на предыдущем фолде ($\mathcal{D}_{val-1} \to \mathcal{D}_{val}$). Подход показал наилучшую устойчивость.
+		\item \textbf{Cumulative:} обучение на всех исторических фолдах ($\bigcup_{j=0}^{val-1} \mathcal{D}_j \to \mathcal{D}_{val}$).
+	\end{enumerate}
+	
+	Параметр \texttt{stride} (шаг смещения anchor date) критически влияет на качество. При $stride=7$ и $target=30$ возникало 77\%-е перекрытие таргетов между фолдами, что приводило к сильному переобучению алгоритмов (в частности, Optuna). Оптимальным решением признан $stride=14$.
+	
+	% ================================================================
+	\section{История экспериментов: Итерации v1 --- v3}
+	
+	В процессе разработки пайплайн прошёл через 3 крупные итерации, выявившие ключевые проблемы данных:
+	
+	\begin{table}[h!]
+		\centering\caption{Ретроспектива итераций v1 -- v3}
+		\begin{tabular}{lll}
+			\toprule
+			\textbf{Версия} & \textbf{Достижения и проблемы} & \textbf{Лучший RMSLE} \\
+			\midrule
+			\textbf{v1} & Baseline CatBoost на 60 фичах. Stride=7. & \rmsleGood{1.6703} \\
+			\midrule
+			\textbf{v2} & Увеличение до 440 фичей. Утечка данных из-за & \multirow{2}{*}{\rmsleBad{1.6880}} \\
+			& stride=7 сломала подбор параметров Optuna.   & \\
+			\midrule
+			\textbf{v3} & Исправлен stride=30 (нет перекрытия). Внедрён & \multirow{2}{*}{\rmsleNeutral{1.6711}} \\
+			& LightGBM и Feature Selection (топ-150 фичей). & \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{warningbox}
+		\textbf{Проблема мультиколлинеарности моделей в v3:}\\
+		Анализ ансамбля показал, что предсказания CatBoost v3 и LightGBM v3 имеют корреляцию Пирсона $0.9927$ --- фактически они полностью идентичны. Единственный ортогональный сигнал давала модель RNN ($\rho \approx 0.93$).
+	\end{warningbox}
+	
+	% ================================================================
+	\section{Альтернативные подходы: BTYD и Two-Stage}
+	
+	Для решения проблемы завышенных нулей (zero-inflation) были реализованы специализированные подходы.
+	
+	\subsection{BTYD (BG/NBD + Gamma-Gamma)}
+	Классическая вероятностная модель поведения покупателей (ноутбук \texttt{7\_btyd.ipynb}). 
+	Модель BG/NBD оценивала частоту покупок и вероятность оттока $P(alive)$, а Gamma-Gamma --- средний чек.
+	\textbf{Результат:} Модель сильно завысила ожидания. Средний предсказанный LTV составил 85.17, что критически оторвано от реальности лучших ML-моделей (средний предикт $\approx 35.35$). Отправка чистого сабмита признана нецелесообразной.
+	
+	\subsection{Two-Stage Model}
+	Двухэтапная архитектура (ноутбук \texttt{6\_two\_stage.ipynb}):
+	\begin{itemize}[nosep]
+		\item \textbf{Stage 1:} CatBoostClassifier предсказывает $P(GMV > 0)$.
+		\item \textbf{Stage 2:} CatBoostRegressor обучается \emph{только} на покупателях ($E[GMV | buy]$).
+	\end{itemize}
+	\textbf{Результат:} Как самостоятельная модель Two-Stage проиграла бейзлайну (лучший RMSLE: 1.90800). Однако \textbf{Stage 1 классификатор дал важнейший инсайт}: анализ показал, что оптимальный порог вероятности покупки составляет $P(buy) = 0.46$.
+	
+	\begin{successbox}
+		\textbf{Метод «Zero-Hack»:}\\
+		Предсказания $P(buy)$ из классификатора можно использовать как маску для лучших регрессоров. Зануление предиктов пользователей с $P(buy) < 0.46$ локально улучшило RMSLE модели Two-Stage с 2.04 до 1.90. Этот хак будет применён к финальному ансамблю.
+	\end{successbox}
+	
+	% ================================================================
+	\section{Итерация v4: Прорыв (Текущий чемпион)}
+	
+	Возврат к принципам надежного бейзлайна, но с расширенными горизонтами данных (ноутбук \texttt{8\_data\_v4\_2.ipynb}).
+	
+	\subsection{Философия признакового пространства v4}
+	\begin{enumerate}
+		\item \textbf{Окна полной истории:} добавлены агрегации за 270d и 365d.
+		\item \textbf{Новые срезы:} \texttt{gmv\_search}, \texttt{gmv\_cat}, флаги \texttt{search}/\texttt{cat}.
+		\item \textbf{RFM-метрики:} добавлены frequency (\texttt{freq\_cart}, \texttt{active\_days}) и recency (\texttt{recency\_cart\_days}, \texttt{user\_age\_days}).
+		\item \textbf{Схема валидации:} возврат к $stride=14$ (золотая середина) и \textbf{Single-Fold} обучению.
+	\end{enumerate}
+	
+	\subsection{CatBoost v4a Baseline}
+	Схема Single-Fold (без переобучающего cumulative-накопления) на новых 392 фичах выдала рекордный результат. Модель самостоятельно отбирала признаки без принудительного Feature Selection.
+	
+	\begin{successbox}
+		\textbf{Результат CatBoost v4a на Лидерборде:} \rmsleGood{1.66049}\\
+		Это лучший результат за весь цикл хакатона, приблизивший решение к лидеру платформы (1,6461846817).
+	\end{successbox}
+	
+	\begin{table}[h!]
+		\centering\caption{Топ-10 признаков (CatBoost v4a)}
+		\begin{tabular}{rlr}
+			\toprule
+			\textbf{\#} & \textbf{Признак} & \textbf{Важность, \%} \\
+			\midrule
+			1 & \texttt{recency\_ord\_days} & 1.33\% \\
+			2 & \texttt{freq\_ord\_365d} & 1.33\% \\
+			3 & \texttt{user\_age\_days} & 1.29\% \\
+			4 & \texttt{to\_ord\_sum\_365d} & 1.22\% \\
+			5 & \texttt{freq\_ord\_270d} & 1.21\% \\
+			6 & \texttt{freq\_ord\_90d} & 1.18\% \\
+			7 & \texttt{trend\_gmv\_90d\_365d} & 1.11\% \\
+			8 & \texttt{gmv\_search\_sum\_365d} & 0.96\% \\
+			9 & \texttt{freq\_ord\_180d} & 0.92\% \\
+			10 & \texttt{recency\_cat\_days} & 0.88\% \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	Анализ важности показал абсолютное доминирование долгосрочных агрегатов (365d, 270d) и метрик недавности (recency).
+	
+	% ================================================================
+	\section{Стратегия финальных ансамблей (5 сабмитов)}
+	
+	Учитывая доступный лимит в 5 отправок, стратегия построена на использовании чемпиона \textbf{CatBoost v4a} в качестве базы. Внутривидовые бленды (Single + Cumulative) отменены из-за идентичности датасетов при $N\_FOLDS=2$.
+	
+	\textbf{Файлы для загрузки на Лидерборд:}
+	\begin{enumerate}
+		\item \textbf{Ортогональный бленд v1:} 85\% CatBoost v4a + 15\% RNN v2.
+		\\Нейросеть сгладит редкие выбросы бустинга благодаря своей ортогональности.
+		\item \textbf{Ортогональный бленд v2:} 90\% CatBoost v4a + 10\% RNN v2.
+		\item \textbf{Zero-Hack Champion:} Чистый предикт CatBoost v4a, в котором принудительно установлены нули для пользователей с $P(buy) < 0.46$ (маска от классификатора).
+		\item \textbf{LightGBM v4 (Соло):} Модель LightGBM, обученная на новых мощных признаках v4. 
+		\item \textbf{Мощный Бустинг-Бленд:} 60\% CatBoost v4a + 40\% LightGBM v4. 
+		\\Диверсификация за счёт комбинации алгоритмов level-wise и leaf-wise сплита.
+	\end{enumerate}
+	
+	% ================================================================
+	\section*{Приложение: Ключевые формулы}
+	\addcontentsline{toc}{section}{Приложение: Ключевые формулы}
+	
+	\subsection*{Оценка качества (RMSLE)}
+	\[
+	\mathrm{RMSLE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}\bigl(\log(1+\hat{y}_i) - \log(1+y_i)\bigr)^2}
+	\]
+	
+	\subsection*{Log-трансформация}
+	\[
+	\tilde{y} = \log\!\bigl(1 + \max(y,\,0)\bigr),\qquad
+	\hat{y} = \max\!\bigl(e^{\hat{\tilde{y}}} - 1,\;0\bigr)
+	\]
+	
+	\subsection*{Tie-breaker: Gini Normalized}
+	\[
+	G_{norm} = \frac{G(\hat{y},y)}{G(y,y)}
+	\qquad
+	G(a,b) = \frac{1}{n}\left(\frac{\sum_i b_{[a_i\downarrow]}\cdot i}{\sum_i b_i} - \frac{n+1}{2}\right)
+	\]
+	
+\end{document}
