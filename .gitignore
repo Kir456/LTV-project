@@ -1,0 +1,37 @@
+# --- Python & Jupyter ---
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.pytest_cache/
+.env
+.venv/
+venv/
+env/
+
+# --- Данные (Data) ---
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Глобальный игнор для тяжелых форматов
+*.parquet
+*.csv
+*.json
+
+# --- Модели (Models) ---
+models/*
+!models/.gitkeep
+*.cbm
+*.pth
+
+# --- Логи и артефакты ---
+catboost_info/
+notebooks/catboost_info/
+
+# --- IDE & OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
