@@ -91,7 +91,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{Метрика:}     & RMSLE (Root Mean Squared Log Error) \\[0.3cm]
 			\textbf{Tie-breaker:} & Gini по предсказаниям + RMSPE суммарного GMV \\[0.3cm]
 			\textbf{Данные:}      & 250\,000 пользователей, 01.01.2025--13.02.2026 \\[0.3cm]
-			\textbf{Текущий ЛБ:}  & \rmsleGood{1.66049} (CatBoost v4a Baseline) \\[0.3cm]
+			\textbf{Текущий ЛБ:}  & \rmsleGood{1.65935} (Blend Ortho 90/10) \\[0.3cm]
 			\textbf{Публичный ЛБ:}& 20\% (50\,000 клиентов) \\[0.3cm]
 			\textbf{Приватный ЛБ:}& 80\% (200\,000 клиентов) \\[0.3cm]
 			\textbf{Старт:}       & 10 августа 2026 г. \\[0.3cm]
@@ -100,7 +100,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{GPU:}         & NVIDIA RTX 4050 Laptop (6 ГБ VRAM) \\
 		\end{tabular}
 		\vfill
-		{\small Дата составления: 17 августа 2026 г. (Финальная редакция)}
+		{\small Дата составления: 18 августа 2026 г. (Обновление после 5-й итерации)}
 	\end{titlepage}
 	
 	\tableofcontents\newpage
@@ -161,68 +161,100 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	
 	Анализ Feature Importance выявил абсолютное доминирование долгосрочных агрегатов (365d, 270d) и метрик недавности (\texttt{recency\_ord\_days}).
 	
+	\begin{table}[h!]
+		\centering\caption{Признаки исходных данных}
+		\begin{tabular}{lll}
+			\toprule
+			\textbf{Колонка} & \textbf{Тип} & \textbf{Описание} \\
+			\midrule
+			\texttt{event\_date}      & date  & Дата активности \\
+			\texttt{user\_id}         & int   & Идентификатор пользователя \\
+			\texttt{search}           & flag  & Использование Поиска \\
+			\texttt{cat}              & flag  & Использование Каталога \\
+			\texttt{has\_search\_to\_cart} & flag & Товар в корзину (Поиск) \\
+			\texttt{has\_search\_to\_ord}  & flag & Покупка (Поиск) \\
+			\texttt{has\_cat\_to\_cart}    & flag & Товар в корзину (Каталог) \\
+			\texttt{has\_cat\_to\_ord}     & flag & Покупка (Каталог) \\
+			\texttt{searches}         & int   & Поисковые запросы \\
+			\texttt{search\_to\_cart} & int   & В корзину (Поиск) \\
+			\texttt{search\_to\_ord}  & int   & Куплено (Поиск) \\
+			\texttt{cat\_to\_cart}    & int   & В корзину (Каталог) \\
+			\texttt{cat\_to\_ord}     & int   & Куплено (Каталог) \\
+			\texttt{to\_cart}         & int   & Всего в корзину \\
+			\texttt{to\_ord}          & int   & Всего куплено \\
+			\texttt{gmv\_search}      & float & GMV из Поиска \\
+			\texttt{gmv\_cat}         & float & GMV из Каталога \\
+			\texttt{gmv}              & float & Суммарный GMV (\textbf{таргет}) \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
 	% ================================================================
 	\section{Архитектура базовых моделей}
 	
-	\subsection{CatBoostRegressor (Чемпион)}
-	Градиентный бустинг с \emph{level-wise} построением деревьев. Обучение производилось по схеме \textbf{Single-Fold} на 392 признаках v4. Модель отлично справилась с извлечением сложных нелинейных зависимостей из агрегатов, выдав лучший одиночный результат \rmsleGood{1.66049}.
+	\subsection{CatBoostRegressor (Основа решения)}
+	Градиентный бустинг с \emph{level-wise} построением деревьев. Обучение производилось по схеме \textbf{Single-Fold} на 392 признаках v4. Выдал лучший одиночный результат \rmsleGood{1.66049}.
 	
 	\subsection{LightGBM}
-	Градиентный бустинг с \emph{leaf-wise} сплитом. Настроен через Optuna с использованием тех же данных (v4). Благодаря другой архитектуре построения деревьев, модель формирует иное распределение ошибок, что отлично подходит для внутривидовой диверсификации бустингов.
+	Градиентный бустинг с \emph{leaf-wise} сплитом. Настроен через Optuna. Благодаря другой архитектуре построения деревьев, модель формирует иное распределение ошибок, что отлично подходит для диверсификации.
 	
 	\subsection{Рекуррентная нейронная сеть (PyTorch GRU)}
-	В отличие от бустингов, которые оперируют статичными историческими агрегатами (sum, max, mean), \textbf{RNN учитывает секвенциальную природу данных}. 
-	
-	\textbf{Архитектура:}
-	\begin{itemize}[nosep]
-		\item \textbf{Input:} Временные ряды (\texttt{SEQ\_LEN=120} дней) по 10 признакам (действия в каталоге, поиске, корзине, GMV).
-		\item \textbf{Core:} 3-слойный GRU (hidden\_dim=192, dropout=0.3).
-		\item \textbf{Head:} Fully Connected слои с LayerNorm и GELU активациями.
-		\item \textbf{Обучение:} Optimizer AdamW + CosineAnnealingLR, Loss: MSE на log1p таргете.
-	\end{itemize}
+	\textbf{RNN учитывает секвенциальную природу данных}, оперируя окнами в 180 дней. Архитектура: 3-слойный GRU (hidden\_dim=192), Optimizer AdamW + CosineAnnealingLR.
 	
 	\begin{successbox}
 		\textbf{Роль RNN в пайплайне:}\\
-		Анализ ансамблей показал, что CatBoost и LightGBM коррелируют между собой на $\approx 0.99$ (они практически идентичны). Однако корреляция Пирсона между CatBoost и RNN составляет всего $\approx 0.93$. Именно RNN обеспечивает необходимую \textbf{ортогональность ошибок}, что делает её идеальным компонентом для финальных блендов.
+		Именно RNN обеспечила необходимую \textbf{ортогональность ошибок}. Смешивание 90\% предсказаний CatBoost и 10\% предсказаний RNN дало синергетический эффект, установив абсолютный рекорд на лидерборде.
 	\end{successbox}
 	
 	% ================================================================
-	\section{Альтернативные подходы: BTYD и Two-Stage}
+	\section{Вычислительная сложность и время выполнения}
 	
-	Для решения проблемы завышенных нулей (zero-inflation) были протестированы специализированные подходы.
+	Пайплайн оптимизирован для выполнения на локальной машине с GPU (\textbf{NVIDIA RTX 4050 Laptop, 6 ГБ VRAM}).
+	
+	\begin{table}[h!]
+		\centering\caption{Примерное время выполнения основных этапов пайплайна}
+		\begin{tabular}{lll}
+			\toprule
+			\textbf{Этап / Модель} & \textbf{Время} & \textbf{Комментарий} \\
+			\midrule
+			Генерация признаков (v4) & $\approx$ 30--40 мин & 30+ млн строк в Polars, 392 фичи. \\
+			Optuna тюнинг (CB/LGBM) & $\approx$ 40--60 мин & Выполнение на GPU (20 триалов). \\
+			Обучение CatBoost (v4a) & $\approx$ 10--15 мин & Быстрое обучение на 1 фолде. \\
+			Обучение LightGBM (v4) & $\approx$ 10--15 мин & Обучение алгоритма leaf-wise на GPU. \\
+			\textbf{Обучение RNN (GRU)} & \textbf{$\approx$ 353 мин} & Самый сложный этап ($\approx 6$ ч). 3-слойная сеть. \\
+			Ансамблирование и сабмиты & $< 1$ мин & Линейный блендинг. \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	% ================================================================
+	\section{Анализ неудачных подходов (BTYD и Zero-Hack)}
 	
 	\subsection{BTYD (BG/NBD + Gamma-Gamma)}
-	Классическая вероятностная модель поведения покупателей (ноутбук \texttt{7\_btyd.ipynb}). 
-	Модель BG/NBD оценивала частоту покупок и вероятность оттока $P(alive)$, а Gamma-Gamma --- средний чек.
-	\textbf{Результат:} Модель сильно завысила ожидания (средний предсказанный LTV = 85.17, против $\approx 35.35$ у CatBoost). Отправка чистого сабмита признана нецелесообразной.
+	Вероятностная модель сильно завысила ожидания (средний предсказанный LTV = 85.17, против $\approx 35$ у CatBoost). Отправка чистого сабмита дала скор $>1.81$.
 	
-	\subsection{Two-Stage Model и метод «Zero-Hack»}
-	Двухэтапная архитектура (ноутбук \texttt{6\_two\_stage.ipynb}):
-	\begin{itemize}[nosep]
-		\item \textbf{Stage 1:} \texttt{CatBoostClassifier} предсказывает $P(GMV > 0)$.
-		\item \textbf{Stage 2:} \texttt{CatBoostRegressor} обучается \emph{только} на покупателях ($E[GMV | buy]$).
-	\end{itemize}
-	Как самостоятельная модель Two-Stage проиграла бейзлайну. Однако классификатор из \textbf{Stage 1} дал важнейший инсайт: оптимальный порог вероятности покупки составляет $P(buy) = 0.46$.
-	
-	\begin{infobox}
-		\textbf{Внедрение «Zero-Hack»:}\\
-		Предсказания $P(buy)$ из классификатора используются как маска. Зануление предиктов пользователей с $P(buy) < 0.46$ спасает регрессоры от штрафа за предсказание мелких сумм для "спящих" клиентов. Этот метод применяется поверх лучших ML-предсказаний.
-	\end{infobox}
+	\subsection{Провал метода «Zero-Hack»}
+	В модели Two-Stage классификатор предсказывал вероятность покупки $P(buy)$. Была выдвинута гипотеза занулять финальный GMV для пользователей с $P(buy) < 0.46$. На публичном лидерборде этот метод показал \textbf{катастрофическое падение скора (1.73573)}. 
+	\textbf{Вывод:} Метрика RMSLE крайне жестко штрафует за предсказание абсолютного нуля, если клиент всё же совершил покупку. Искусственное зануление признано опасным и исключено из пайплайна.
 	
 	% ================================================================
 	\section{Сводная таблица сабмитов (Leaderboard)}
 	
-	Ниже представлена полная история отправок решений на платформу, демонстрирующая поэтапное улучшение алгоритмов (отсортировано по улучшению метрики).
+	Ниже представлена актуальная история отправок решений, отсортированная по метрике RMSLE.
 	
 	\begin{table}[h!]
-		\centering\caption{История отправок решений на публичный Лидерборд}
+		\centering\caption{Актуальные результаты на публичном Лидерборде}
 		\rowcolors{2}{lightgray}{white}
 		\begin{tabular}{llc}
 			\toprule
 			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
 			\midrule
 			\rowcolor{bgsuccess}
-			\texttt{catboost\_v4a\_baseline\_submission} & \rmsleGood{1.66049} & \textbf{ЧЕМПИОН (v4)} \\
+			\texttt{blend\_ortho\_90\_10.csv} & \rmsleGood{1.65935} & \textbf{ЧЕМПИОН (CB 90\% + RNN 10\%)} \\
+			\rowcolor{bgsuccess}
+			\texttt{blend\_ortho\_85\_15.csv} & \rmsleGood{1.65992} & Отличная синергия \\
+			\texttt{catboost\_v4a\_baseline\_submission} & 1.66049 & Лучший одиночный предикт \\
+			\texttt{blend\_v4a60\_lgbm40.csv} & 1.66336 & LGBM на старых фичах \\
 			\texttt{catboost\_baseline\_submission} & 1.67028 & Baseline v1 \\
 			\texttt{lgbm\_v3\_submission} & 1.67115 & \\
 			\texttt{catboost\_v3\_submission} & 1.67116 & \\
@@ -232,10 +264,12 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\texttt{blend\_cbv3\_70\_rnnv3\_30} & 1.67583 & \\
 			\texttt{ensemble\_cb70\_rnn30} & 1.67588 & \\
 			\texttt{blend\_cbv3\_65\_rnnv3\_35} & 1.67702 & \\
+			\texttt{lgbm\_v4\_submission} & \rmsleBad{1.68433} & Ошибка загрузки feature\_importance \\
 			\texttt{ensemble\_v2\_cb70\_rnn30} & \rmsleBad{1.68803} & \\
 			\texttt{ensemble\_v2\_cb60\_rnn40} & \rmsleBad{1.68942} & Утечка v2 \\
 			\texttt{catboost\_v2\_submission} & \rmsleBad{1.69009} & Утечка v2 \\
-			\texttt{rnn\_v2\_submission} & \rmsleBad{1.71792} & Лучшая RNN \\
+			\texttt{rnn\_v2\_submission} & \rmsleBad{1.71792} & База для ансамбля орто \\
+			\texttt{catboost\_v4a\_zero\_hacked} & \rmsleBad{1.73573} & \textbf{Провал гипотезы нулей} \\
 			\texttt{rnn\_baseline\_submission} & \rmsleBad{1.73624} & \\
 			\texttt{btyd\_blend\_btyd2\_cb8} & \rmsleBad{1.76655} & \\
 			\texttt{catboost\_tuned\_submission} & \rmsleBad{1.79400} & Провал Optuna v1 \\
@@ -245,19 +279,15 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	\end{table}
 	
 	% ================================================================
-	\section{Стратегия финальных ансамблей (5 сабмитов)}
+	\section{Стратегия на финальные отправки}
 	
-	Учитывая доступный лимит в 5 отправок, стратегия построена на использовании чемпиона \textbf{CatBoost v4a} в качестве базы.
+	Текущий рекорд 1.65935 достигнут за счёт ансамблирования. Дальнейшие шаги фокусируются на эксплуатации этой синергии:
 	
-	\textbf{Файлы для загрузки на Лидерборд:}
 	\begin{enumerate}
-		\item \textbf{Ортогональный бленд v1:} 85\% CatBoost v4a + 15\% RNN v2.
-		\\Нейросеть сгладит редкие выбросы бустинга благодаря своей ортогональности.
-		\item \textbf{Ортогональный бленд v2:} 90\% CatBoost v4a + 10\% RNN v2.
-		\item \textbf{Zero-Hack Champion:} Чистый предикт CatBoost v4a, в котором принудительно установлены нули для пользователей с $P(buy) < 0.46$ (маска от классификатора).
-		\item \textbf{LightGBM v4 (Соло):} Модель LightGBM, обученная на новых мощных признаках v4. 
-		\item \textbf{Мощный Бустинг-Бленд:} 60\% CatBoost v4a + 40\% LightGBM v4. 
-		\\Диверсификация за счёт комбинации алгоритмов level-wise и leaf-wise сплита.
+		\item \textbf{Тонкий тюнинг весов (Micro-blending):} Так как пропорция 90/10 превзошла 85/15, необходимо исследовать крайние значения (например, 95/5 или 93/7), чтобы найти абсолютный оптимум.
+		\item \textbf{Перезапуск LightGBM:} Обучение LightGBM на корректном топе признаков v4.
+		\item \textbf{Разработка RNN v4:} Обучение нейросети на обновленных данных (использование \texttt{SEQ\_LEN = 180} и включение флагов каталога/поиска), чтобы повысить качество базового предикта перед блендингом.
+		\item \textbf{Pseudo-labeling (Псевдо-разметка):} Использование наиболее уверенных предсказаний из текущего лучшего сабмита в качестве истинных меток для расширения обучающей выборки CatBoost. Этот метод позволяет модели выучить скрытую структуру тестовой выборки.
 	\end{enumerate}
 	
 	% ================================================================
@@ -273,13 +303,6 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	\[
 	\tilde{y} = \log\!\bigl(1 + \max(y,\,0)\bigr),\qquad
 	\hat{y} = \max\!\bigl(e^{\hat{\tilde{y}}} - 1,\;0\bigr)
-	\]
-	
-	\subsection*{Tie-breaker: Gini Normalized}
-	\[
-	G_{norm} = \frac{G(\hat{y},y)}{G(y,y)}
-	\qquad
-	G(a,b) = \frac{1}{n}\left(\frac{\sum_i b_{[a_i\downarrow]}\cdot i}{\sum_i b_i} - \frac{n+1}{2}\right)
 	\]
 	
 \end{document}
