@@ -217,10 +217,10 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\toprule
 			\textbf{Этап / Модель} & \textbf{Время} & \textbf{Комментарий} \\
 			\midrule
-			Генерация признаков (v4) & $\approx$ 30--40 мин & 30+ млн строк в Polars, 392 фичи. \\
-			Optuna тюнинг (CB/LGBM) & $\approx$ 40--60 мин & Выполнение на GPU (20 триалов). \\
-			Обучение CatBoost (v4a) & $\approx$ 10--15 мин & Быстрое обучение на 1 фолде. \\
-			Обучение LightGBM (v4) & $\approx$ 10--15 мин & Обучение алгоритма leaf-wise на GPU. \\
+			Генерация признаков (v4) & $\approx$ 5 мин & 30+ млн строк в Polars, 392 фичи. \\
+			Optuna тюнинг (CB/LGBM) & $\approx$ 60--90 мин & Выполнение на GPU (20 триалов). \\
+			Обучение CatBoost (v4a) & $\approx$ 10 мин & Быстрое обучение на 1 фолде. \\
+			Обучение LightGBM (v4) & $\approx$ 10 мин & Обучение алгоритма leaf-wise на GPU. \\
 			\textbf{Обучение RNN (GRU)} & \textbf{$\approx$ 353 мин} & Самый сложный этап ($\approx 6$ ч). 3-слойная сеть. \\
 			Ансамблирование и сабмиты & $< 1$ мин & Линейный блендинг. \\
 			\bottomrule
