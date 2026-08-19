@@ -91,7 +91,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{Метрика:}     & RMSLE (Root Mean Squared Log Error) \\[0.3cm]
 			\textbf{Tie-breaker:} & Gini по предсказаниям + RMSPE суммарного GMV \\[0.3cm]
 			\textbf{Данные:}      & 250\,000 пользователей, 01.01.2025--13.02.2026 \\[0.3cm]
-			\textbf{Текущий ЛБ:}  & \rmsleGood{1.65935} (Blend Ortho 90/10) \\[0.3cm]
+			\textbf{Текущий ЛБ:}  & \rmsleGood{1.65935} (Blend CB v4a + RNN v2) \\[0.3cm]
 			\textbf{Публичный ЛБ:}& 20\% (50\,000 клиентов) \\[0.3cm]
 			\textbf{Приватный ЛБ:}& 80\% (200\,000 клиентов) \\[0.3cm]
 			\textbf{Старт:}       & 10 августа 2026 г. \\[0.3cm]
@@ -100,7 +100,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{GPU:}         & NVIDIA RTX 4050 Laptop (6 ГБ VRAM) \\
 		\end{tabular}
 		\vfill
-		{\small Дата составления: 18 августа 2026 г. (Обновление после 5-й итерации)}
+		{\small Дата составления: 19 августа 2026 г. (Финальная редакция)}
 	\end{titlepage}
 	
 	\tableofcontents\newpage
@@ -128,181 +128,67 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	
 	\subsection{Особенности исходных данных}
 	
-	\begin{infobox}
-		\textbf{Объём:} 30+ млн записей, 250\,000 клиентов\\
-		\textbf{Период:} 01.01.2025 -- 13.02.2026 (407 дней)\\
-		\textbf{Тип:} Прореженные временные ряды (спарс).
-	\end{infobox}
-	
 	Особенности целевой переменной: данные сильно \textbf{zero-inflated}. Около 45.1\% пользователей в обучающей выборке не совершают ни одной покупки (target = 0).
 	
 	% ================================================================
 	\section{Схема валидации: Walk-Forward Cross-Validation}
 	
-	Для временных рядов используется строго \textbf{Walk-Forward CV}.
-	Тестировались два подхода к формированию обучающей выборки:
-	\begin{enumerate}
-		\item \textbf{Single-Fold:} обучение только на предыдущем фолде ($\mathcal{D}_{val-1} \to \mathcal{D}_{val}$). Подход показал наилучшую устойчивость.
-		\item \textbf{Cumulative:} обучение на всех исторических фолдах ($\bigcup_{j=0}^{val-1} \mathcal{D}_j \to \mathcal{D}_{val}$).
-	\end{enumerate}
-	
-	Параметр \texttt{stride} (шаг смещения anchor date) критически влияет на качество. При $stride=7$ и $target=30$ возникало 77\%-е перекрытие таргетов между фолдами, что приводило к сильному переобучению алгоритмов (в частности, Optuna). Оптимальным решением признан $stride=14$.
+	Для временных рядов используется строго \textbf{Walk-Forward CV}. Сравнивались схемы \textbf{Single-Fold} и \textbf{Cumulative}. Параметр \texttt{stride} (шаг смещения) критически влияет на качество. Оптимальным решением признан $stride=14$ при Single-Fold обучении.
 	
 	% ================================================================
 	\section{Эволюция признакового пространства}
 	
-	В процессе разработки пайплайн прошёл через несколько итераций, выявивших ключевые зависимости. 
-	Финальным прорывом стала итерация \textbf{v4}, где были применены следующие принципы:
+	В итерации \textbf{v4} были применены следующие принципы:
 	\begin{enumerate}
 		\item \textbf{Окна полной истории:} добавлены агрегации за 270d и 365d (использование всей истории в 407 дней).
 		\item \textbf{Новые срезы:} \texttt{gmv\_search}, \texttt{gmv\_cat}, бинарные флаги \texttt{search}/\texttt{cat}.
-		\item \textbf{RFM-метрики:} добавлены frequency (\texttt{freq\_cart}, \texttt{active\_days}) и recency (\texttt{recency\_cart\_days}, \texttt{user\_age\_days}).
+		\item \textbf{RFM-метрики:} добавлены frequency и recency (\texttt{recency\_cart\_days}, \texttt{user\_age\_days}).
 	\end{enumerate}
 	
-	Анализ Feature Importance выявил абсолютное доминирование долгосрочных агрегатов (365d, 270d) и метрик недавности (\texttt{recency\_ord\_days}).
-	
-	\begin{table}[h!]
-		\centering\caption{Признаки исходных данных}
-		\begin{tabular}{lll}
-			\toprule
-			\textbf{Колонка} & \textbf{Тип} & \textbf{Описание} \\
-			\midrule
-			\texttt{event\_date}      & date  & Дата активности \\
-			\texttt{user\_id}         & int   & Идентификатор пользователя \\
-			\texttt{search}           & flag  & Использование Поиска \\
-			\texttt{cat}              & flag  & Использование Каталога \\
-			\texttt{has\_search\_to\_cart} & flag & Товар в корзину (Поиск) \\
-			\texttt{has\_search\_to\_ord}  & flag & Покупка (Поиск) \\
-			\texttt{has\_cat\_to\_cart}    & flag & Товар в корзину (Каталог) \\
-			\texttt{has\_cat\_to\_ord}     & flag & Покупка (Каталог) \\
-			\texttt{searches}         & int   & Поисковые запросы \\
-			\texttt{search\_to\_cart} & int   & В корзину (Поиск) \\
-			\texttt{search\_to\_ord}  & int   & Куплено (Поиск) \\
-			\texttt{cat\_to\_cart}    & int   & В корзину (Каталог) \\
-			\texttt{cat\_to\_ord}     & int   & Куплено (Каталог) \\
-			\texttt{to\_cart}         & int   & Всего в корзину \\
-			\texttt{to\_ord}          & int   & Всего куплено \\
-			\texttt{gmv\_search}      & float & GMV из Поиска \\
-			\texttt{gmv\_cat}         & float & GMV из Каталога \\
-			\texttt{gmv}              & float & Суммарный GMV (\textbf{таргет}) \\
-			\bottomrule
-		\end{tabular}
-	\end{table}
-	
 	% ================================================================
-	\section{Архитектура базовых моделей}
+	\section{Базовые алгоритмы и финальные эксперименты}
 	
 	\subsection{CatBoostRegressor (Основа решения)}
-	Градиентный бустинг с \emph{level-wise} построением деревьев. Обучение производилось по схеме \textbf{Single-Fold} на 392 признаках v4. Выдал лучший одиночный результат \rmsleGood{1.66049}.
-	
-	\subsection{LightGBM}
-	Градиентный бустинг с \emph{leaf-wise} сплитом. Настроен через Optuna. Благодаря другой архитектуре построения деревьев, модель формирует иное распределение ошибок, что отлично подходит для диверсификации.
+	Градиентный бустинг с \emph{level-wise} построением деревьев на 392 признаках v4. 
+	\textbf{Эксперимент Seed Averaging:} Для устранения дисперсии лучшая конфигурация была обучена 5 раз с различными seed-значениями (42, 123, 777, 2024, 31415) и пониженным $lr=0.015$. Усреднение предиктов (CatBoost v4b) снизило RMSLE на локальной валидации с 1.66332 до 1.66297.
 	
 	\subsection{Рекуррентная нейронная сеть (PyTorch GRU)}
-	\textbf{RNN учитывает секвенциальную природу данных}, оперируя окнами в 180 дней. Архитектура: 3-слойный GRU (hidden\_dim=192), Optimizer AdamW + CosineAnnealingLR.
-	
-	\begin{successbox}
-		\textbf{Роль RNN в пайплайне:}\\
-		Именно RNN обеспечила необходимую \textbf{ортогональность ошибок}. Смешивание 90\% предсказаний CatBoost и 10\% предсказаний RNN дало синергетический эффект, установив абсолютный рекорд на лидерборде.
-	\end{successbox}
+	\textbf{RNN учитывает секвенциальную природу данных}. Использовалась ради ортогональности предсказаний. Смешивание предсказаний CatBoost и слабой RNN v2 дало мощный синергетический эффект.
 	
 	% ================================================================
-	\section{Вычислительная сложность и время выполнения}
+	\section{Анализ неудачных подходов}
 	
-	Пайплайн оптимизирован для выполнения на локальной машине с GPU (\textbf{NVIDIA RTX 4050 Laptop, 6 ГБ VRAM}).
+	\subsection{Отказ от Tweedie Loss}
+	Тестирование специализированной функции потерь Tweedie (variance power 1.3--1.9) для zero-inflated распределений показало катастрофические результаты (RMSLE $\approx$ 2.76). Для метрики RMSLE логарифмическая трансформация таргета + стандартный RMSE остается безальтернативным решением.
+	
+	\subsection{Отказ от LightGBM}
+	Архитектура leaf-wise нестабильна на сильно разреженных (zero-inflated) данных. Модель не способна корректно обрабатывать нулевые таргеты и была исключена.
+	
+	\subsection{Парадокс ортогональности ансамблей}
+	Создание улучшенной версии \textbf{RNN v4} (окно 180 дней, шаг 14 дней) привело к тому, что новая RNN выучила те же паттерны, что и бустинг. Модели стали сильно скоррелированы (diversity уничтожен). Принято решение использовать для блендов только старую "слабую" нейросеть RNN v2.
+	
+	% ================================================================
+	\section{Ожидающие отправки решения (План на день)}
+	
+	На основе проведенных локальных валидаций подготовлен пакет из 5 сабмитов, направленный на максимизацию результата через Seed Averaging и микро-тюнинг весов:
 	
 	\begin{table}[h!]
-		\centering\caption{Примерное время выполнения основных этапов пайплайна}
-		\begin{tabular}{lll}
+		\centering\caption{План финальных отправок}
+		\rowcolors{2}{white}{lightgray}
+		\begin{tabular}{ll}
 			\toprule
-			\textbf{Этап / Модель} & \textbf{Время} & \textbf{Комментарий} \\
+			\textbf{Имя файла} & \textbf{Суть эксперимента} \\
 			\midrule
-			Генерация признаков (v4) & $\approx$ 5 мин & 30+ млн строк в Polars, 392 фичи. \\
-			Optuna тюнинг (CB/LGBM) & $\approx$ 60--90 мин & Выполнение на GPU (20 триалов). \\
-			Обучение CatBoost (v4a) & $\approx$ 10 мин & Быстрое обучение на 1 фолде. \\
-			Обучение LightGBM (v4) & $\approx$ 10 мин & Обучение алгоритма leaf-wise на GPU. \\
-			\textbf{Обучение RNN (GRU)} & \textbf{$\approx$ 353 мин} & Самый сложный этап ($\approx 6$ ч). 3-слойная сеть. \\
-			Ансамблирование и сабмиты & $< 1$ мин & Линейный блендинг. \\
+			\texttt{catboost\_v4a\_seed\_avg.csv} & Соло-бустинг (5 seeds) для оценки базы. \\
+			\texttt{blend\_seed\_avg\_90\_rnn10.csv} & \textbf{Основная ставка.} CB v4b (90\%) + RNN v2 (10\%). \\
+			\texttt{blend\_seed\_avg\_92\_rnn8.csv} & Микро-тюнинг (смещение в пользу бустинга). \\
+			\texttt{blend\_seed\_avg\_88\_rnn12.csv} & Микро-тюнинг (смещение в пользу нейросети). \\
+			\texttt{blend\_pseudo\_90\_rnn10.csv} & Псевдо-разметка (Риск-ставка). \\
 			\bottomrule
 		\end{tabular}
 	\end{table}
 	
-	% ================================================================
-	\section{Анализ неудачных подходов (BTYD и Zero-Hack)}
-	
-	\subsection{BTYD (BG/NBD + Gamma-Gamma)}
-	Вероятностная модель сильно завысила ожидания (средний предсказанный LTV = 85.17, против $\approx 35$ у CatBoost). Отправка чистого сабмита дала скор $>1.81$.
-	
-	\subsection{Провал метода «Zero-Hack»}
-	В модели Two-Stage классификатор предсказывал вероятность покупки $P(buy)$. Была выдвинута гипотеза занулять финальный GMV для пользователей с $P(buy) < 0.46$. На публичном лидерборде этот метод показал \textbf{катастрофическое падение скора (1.73573)}. 
-	\textbf{Вывод:} Метрика RMSLE крайне жестко штрафует за предсказание абсолютного нуля, если клиент всё же совершил покупку. Искусственное зануление признано опасным и исключено из пайплайна.
-	
-	% ================================================================
-	\section{Сводная таблица сабмитов (Leaderboard)}
-	
-	Ниже представлена актуальная история отправок решений, отсортированная по метрике RMSLE.
-	
-	\begin{table}[h!]
-		\centering\caption{Актуальные результаты на публичном Лидерборде}
-		\rowcolors{2}{lightgray}{white}
-		\begin{tabular}{llc}
-			\toprule
-			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
-			\midrule
-			\rowcolor{bgsuccess}
-			\texttt{blend\_ortho\_90\_10.csv} & \rmsleGood{1.65935} & \textbf{ЧЕМПИОН (CB 90\% + RNN 10\%)} \\
-			\rowcolor{bgsuccess}
-			\texttt{blend\_ortho\_85\_15.csv} & \rmsleGood{1.65992} & Отличная синергия \\
-			\texttt{catboost\_v4a\_baseline\_submission} & 1.66049 & Лучший одиночный предикт \\
-			\texttt{blend\_v4a60\_lgbm40.csv} & 1.66336 & LGBM на старых фичах \\
-			\texttt{catboost\_baseline\_submission} & 1.67028 & Baseline v1 \\
-			\texttt{lgbm\_v3\_submission} & 1.67115 & \\
-			\texttt{catboost\_v3\_submission} & 1.67116 & \\
-			\texttt{catboost\_v4\_cumul\_submission} & 1.67126 & \\
-			\texttt{catboost\_v4\_single\_submission} & 1.67177 & \\
-			\texttt{blend\_cbv3\_80\_rnnv3\_19} & 1.67380 & \\
-			\texttt{blend\_cbv3\_70\_rnnv3\_30} & 1.67583 & \\
-			\texttt{ensemble\_cb70\_rnn30} & 1.67588 & \\
-			\texttt{blend\_cbv3\_65\_rnnv3\_35} & 1.67702 & \\
-			\texttt{lgbm\_v4\_submission} & \rmsleBad{1.68433} & Ошибка загрузки feature\_importance \\
-			\texttt{ensemble\_v2\_cb70\_rnn30} & \rmsleBad{1.68803} & \\
-			\texttt{ensemble\_v2\_cb60\_rnn40} & \rmsleBad{1.68942} & Утечка v2 \\
-			\texttt{catboost\_v2\_submission} & \rmsleBad{1.69009} & Утечка v2 \\
-			\texttt{rnn\_v2\_submission} & \rmsleBad{1.71792} & База для ансамбля орто \\
-			\texttt{catboost\_v4a\_zero\_hacked} & \rmsleBad{1.73573} & \textbf{Провал гипотезы нулей} \\
-			\texttt{rnn\_baseline\_submission} & \rmsleBad{1.73624} & \\
-			\texttt{btyd\_blend\_btyd2\_cb8} & \rmsleBad{1.76655} & \\
-			\texttt{catboost\_tuned\_submission} & \rmsleBad{1.79400} & Провал Optuna v1 \\
-			\texttt{btyd\_blend\_btyd3\_cb7} & \rmsleBad{1.81827} & Переоценка BTYD \\
-			\bottomrule
-		\end{tabular}
-	\end{table}
-	
-	% ================================================================
-	\section{Стратегия на финальные отправки}
-	
-	Текущий рекорд 1.65935 достигнут за счёт ансамблирования. Дальнейшие шаги фокусируются на эксплуатации этой синергии:
-	
-	\begin{enumerate}
-		\item \textbf{Тонкий тюнинг весов (Micro-blending):} Так как пропорция 90/10 превзошла 85/15, необходимо исследовать крайние значения (например, 95/5 или 93/7), чтобы найти абсолютный оптимум.
-		\item \textbf{Перезапуск LightGBM:} Обучение LightGBM на корректном топе признаков v4.
-		\item \textbf{Разработка RNN v4:} Обучение нейросети на обновленных данных (использование \texttt{SEQ\_LEN = 180} и включение флагов каталога/поиска), чтобы повысить качество базового предикта перед блендингом.
-		\item \textbf{Pseudo-labeling (Псевдо-разметка):} Использование наиболее уверенных предсказаний из текущего лучшего сабмита в качестве истинных меток для расширения обучающей выборки CatBoost. Этот метод позволяет модели выучить скрытую структуру тестовой выборки.
-	\end{enumerate}
-	
-	% ================================================================
-	\section*{Приложение: Ключевые формулы}
-	\addcontentsline{toc}{section}{Приложение: Ключевые формулы}
-	
-	\subsection*{Оценка качества (RMSLE)}
-	\[
-	\mathrm{RMSLE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}\bigl(\log(1+\hat{y}_i) - \log(1+y_i)\bigr)^2}
-	\]
-	
-	\subsection*{Log-трансформация}
-	\[
-	\tilde{y} = \log\!\bigl(1 + \max(y,\,0)\bigr),\qquad
-	\hat{y} = \max\!\bigl(e^{\hat{\tilde{y}}} - 1,\;0\bigr)
-	\]
+	\section{Стратегия: Жёсткое ансамблирование}
+	После оценки 5 запланированных сабмитов на Лидерборде, пайплайн будет переведен на стадию жесткого ансамблирования. Поиск идеальных весов (или построение мета-модели Stacking/Ridge) будет производиться автоматизированно через оптимизацию OOF-предсказаний на валидационном фолде.
 	
 \end{document}
