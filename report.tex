@@ -5,7 +5,7 @@
 \usepackage{geometry}
 \usepackage{booktabs}
 \usepackage{array}
-\usepackage[table]{xcolor}
+\usepackage{xcolor}
 \usepackage{hyperref}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -14,7 +14,6 @@
 \usepackage{titlesec}
 \usepackage{mdframed}
 \usepackage{listings}
-\usepackage{multirow}
 \setlength{\headheight}{13.6pt}
 
 \geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2cm}
@@ -91,7 +90,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{Метрика:}     & RMSLE (Root Mean Squared Log Error) \\[0.3cm]
 			\textbf{Tie-breaker:} & Gini по предсказаниям + RMSPE суммарного GMV \\[0.3cm]
 			\textbf{Данные:}      & 250\,000 пользователей, 01.01.2025--13.02.2026 \\[0.3cm]
-			\textbf{Текущий ЛБ:}  & \rmsleGood{1.65935} (Blend CB v4a + RNN v2) \\[0.3cm]
+			\textbf{Финальный ЛБ:}& \rmsleGood{1.65590} (CB 80\% + MLP 15\% + XGB 5\%) \\[0.3cm]
 			\textbf{Публичный ЛБ:}& 20\% (50\,000 клиентов) \\[0.3cm]
 			\textbf{Приватный ЛБ:}& 80\% (200\,000 клиентов) \\[0.3cm]
 			\textbf{Старт:}       & 10 августа 2026 г. \\[0.3cm]
@@ -100,7 +99,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{GPU:}         & NVIDIA RTX 4050 Laptop (6 ГБ VRAM) \\
 		\end{tabular}
 		\vfill
-		{\small Дата составления: 19 августа 2026 г. (Финальная редакция)}
+		{\small Дата составления: 23 августа 2026 г. (Финальная редакция)}
 	\end{titlepage}
 	
 	\tableofcontents\newpage
@@ -109,86 +108,125 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	% ================================================================
 	\section{Описание задачи и данных}
 	
-	\subsection{Постановка задачи}
-	
 	Задача --- предсказание \textbf{Customer Lifetime Value (LTV)} на горизонте 30 дней.
-	Модель должна по истории активности пользователя предсказать суммарный GMV
-	за период с 14.02.2026 по 15.03.2026.
+	Особенности целевой переменной: данные сильно \textbf{zero-inflated}. Около 45.1\% пользователей в обучающей выборке не совершают ни одной покупки (target = 0).
 	
 	\begin{dangerbox}
 		\textbf{Публичный / Приватный лидерборд: 20\% / 80\%!}\\
 		Оценка на публичном лидерборде вычисляется только по 50\,000 из 250\,000 клиентов.
-		Это означает высокий риск \emph{public-private shake-up}.
+		Это означает высокий риск \emph{public-private shake-up}. Оптимизация моделей строилась на строгой локальной кросс-валидации (OOF) с последующей корректировкой весов бленда.
 	\end{dangerbox}
 	
-	\textbf{Метрика качества:}
-	\[
-	\mathrm{RMSLE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}\bigl(\log(1+\hat{y}_i) - \log(1+y_i)\bigr)^2}
-	\]
+	% ================================================================
+	\section{Схема валидации и Признаковое пространство (v5)}
+	Для временных рядов использовался строго \textbf{Walk-Forward CV} ($stride=14$ дней). В финальной версии \texttt{v5} схема была расширена до \textbf{5 фолдов} (min\_history=180 дней) для построения устойчивого мета-ансамбля.
 	
-	\subsection{Особенности исходных данных}
-	
-	Особенности целевой переменной: данные сильно \textbf{zero-inflated}. Около 45.1\% пользователей в обучающей выборке не совершают ни одной покупки (target = 0).
+	Сгенерировано 435 признаков. Ключевые нововведения версии \texttt{v5}:
+	\begin{itemize}[nosep]
+		\item \textbf{Межпокупочные паттерны:} mean/std gap между заказами, метрики регулярности (\texttt{order\_regularity\_cv}).
+		\item \textbf{Lifecycle Trajectory:} Ускорение заказов (\texttt{order\_acceleration}) и GMV slope.
+		\item \textbf{Channel Migration:} Изменение доли поиска в GMV (search $\rightarrow$ catalog shift).
+	\end{itemize}
 	
 	% ================================================================
-	\section{Схема валидации: Walk-Forward Cross-Validation}
+	\section{Архитектура Мета-Ансамбля (Stacking)}
+	Финальное решение построено на максимизации \textbf{независимости ошибок} (Error Orthogonality). Классические рекуррентные нейросети (RNN) были исключены ввиду слабой способности к генерализации сложных высокоуровневых признаков \texttt{v5}. Итоговый "Трехглавый Франкенштейн" состоит из трех SOTA-моделей:
 	
-	Для временных рядов используется строго \textbf{Walk-Forward CV}. Сравнивались схемы \textbf{Single-Fold} и \textbf{Cumulative}. Параметр \texttt{stride} (шаг смещения) критически влияет на качество. Оптимальным решением признан $stride=14$ при Single-Fold обучении.
+	\subsection{1. CatBoostRegressor (Базовый фундамент, Вес: 80\%)}
+	Градиентный бустинг с \emph{level-wise} (oblivious) построением деревьев на 435 признаках. 
+	Применена техника \textbf{Seed Averaging}: усреднение предсказаний 5 моделей с разными seed-значениями для радикального снижения дисперсии. Модель показала высочайшую стабильность на лидерборде (Соло ЛБ: \textbf{1.65656}).
 	
-	% ================================================================
-	\section{Эволюция признакового пространства}
+	\subsection{2. Tabular MLP + ZILN Loss (Вероятностная нейросеть, Вес: 15\%)}
+	Полносвязный 4-слойный перцептрон, обученный на сглаженных признаках. Использует функцию потерь ZILN (\emph{Zero-Inflated Lognormal Loss}), предложенную исследователями из Google, которая одновременно решает задачи классификации (купит ли?) и регрессии (сколько потратит?). Модель отлично генерализует нелинейности и обеспечивает высокую ортогональность к бустингам (Соло ЛБ: \textbf{1.66220}).
 	
-	В итерации \textbf{v4} были применены следующие принципы:
-	\begin{enumerate}
-		\item \textbf{Окна полной истории:} добавлены агрегации за 270d и 365d (использование всей истории в 407 дней).
-		\item \textbf{Новые срезы:} \texttt{gmv\_search}, \texttt{gmv\_cat}, бинарные флаги \texttt{search}/\texttt{cat}.
-		\item \textbf{RFM-метрики:} добавлены frequency и recency (\texttt{recency\_cart\_days}, \texttt{user\_age\_days}).
-	\end{enumerate}
-	
-	% ================================================================
-	\section{Базовые алгоритмы и финальные эксперименты}
-	
-	\subsection{CatBoostRegressor (Основа решения)}
-	Градиентный бустинг с \emph{level-wise} построением деревьев на 392 признаках v4. 
-	\textbf{Эксперимент Seed Averaging:} Для устранения дисперсии лучшая конфигурация была обучена 5 раз с различными seed-значениями (42, 123, 777, 2024, 31415) и пониженным $lr=0.015$. Усреднение предиктов (CatBoost v4b) снизило RMSLE на локальной валидации с 1.66332 до 1.66297.
-	
-	\subsection{Рекуррентная нейронная сеть (PyTorch GRU)}
-	\textbf{RNN учитывает секвенциальную природу данных}. Использовалась ради ортогональности предсказаний. Смешивание предсказаний CatBoost и слабой RNN v2 дало мощный синергетический эффект.
+	\subsection{3. XGBoost (Охотник на нелинейности, Вес: 5\%)}
+	Асимметричный градиентный бустинг с глубокой L1-регуляризацией (\texttt{reg\_alpha = 2.0}). Показал феноменальный результат на локальной валидации (OOF: 1.641), но был слегка переобучен на публичном тесте (ЛБ: 1.665). Добавлен с минимальным весом исключительно ради ортогональности предсказаний.
 	
 	% ================================================================
-	\section{Анализ неудачных подходов}
+	\section{Анализ преодоленных проблем}
 	
-	\subsection{Отказ от Tweedie Loss}
-	Тестирование специализированной функции потерь Tweedie (variance power 1.3--1.9) для zero-inflated распределений показало катастрофические результаты (RMSLE $\approx$ 2.76). Для метрики RMSLE логарифмическая трансформация таргета + стандартный RMSE остается безальтернативным решением.
+	\subsection{Взрыв градиентов MLP из-за StandardScaler}
+	При переходе на признаки \texttt{v5} (где было много пропусков в дисперсиях интервалов) применение классического \texttt{StandardScaler} привело к катастрофическому росту Loss (RMSLE $\approx 1.89$). Проблема была решена переходом на \textbf{\texttt{QuantileTransformer}} (\texttt{output\_distribution='normal'}), который аккуратно уложил все выбросы в идеальный колокол гауссианы.
 	
-	\subsection{Отказ от LightGBM}
-	Архитектура leaf-wise нестабильна на сильно разреженных (zero-inflated) данных. Модель не способна корректно обрабатывать нулевые таргеты и была исключена.
+	\subsection{Математика предсказаний ZILN}
+	Извлечение медианы из ZILN Loss $\bigl(p \cdot \exp(\mu)\bigr)$ давало сильную недооценку LTV. Переключение на формулу минимизации логарифмической ошибки $\bigl(\exp(p \cdot \mu) - 1\bigr)$ восстановило метрику RMSLE до чемпионских значений.
 	
-	\subsection{Парадокс ортогональности ансамблей}
-	Создание улучшенной версии \textbf{RNN v4} (окно 180 дней, шаг 14 дней) привело к тому, что новая RNN выучила те же паттерны, что и бустинг. Модели стали сильно скоррелированы (diversity уничтожен). Принято решение использовать для блендов только старую "слабую" нейросеть RNN v2.
+	\subsection{Отказ от автоматического Ridge Stacking}
+	Модель XGBoost показала сильный локальный OOF, что заставило Ridge-оптимизатор выделить ей до 70\% веса. Из-за "OOF-LB Shake-up" это привело бы к падению метрики на реальном тесте. Был применен \textbf{Умный ручной стэкинг}, где фундаментом выступил стабильный CatBoost Seed Avg.
+	
+	\subsection{Трансформация таргета $y^{0.5}$ (Sqrt)}
+	Попытка обучить XGBoost на квадратных корнях таргета (вместо \texttt{log1p}) привела к завышению прогнозов для нулевых пользователей (средний предикт $\approx 55$). Возврат к логарифму устранил проблему.
 	
 	% ================================================================
-	\section{Ожидающие отправки решения (План на день)}
-	
-	На основе проведенных локальных валидаций подготовлен пакет из 5 сабмитов, направленный на максимизацию результата через Seed Averaging и микро-тюнинг весов:
+	\section{Полная история сабмитов (Leaderboard)}
+	В таблицах ниже задокументированы все 44 итерации отправок, отсортированные по улучшению метрики.
 	
 	\begin{table}[h!]
-		\centering\caption{План финальных отправок}
-		\rowcolors{2}{white}{lightgray}
-		\begin{tabular}{ll}
+		\centering\small
+		\caption{Полная история результатов (Часть 1: Топ-22)}
+		\vspace{0.2cm}
+		\begin{tabular}{l l p{8cm}}
 			\toprule
-			\textbf{Имя файла} & \textbf{Суть эксперимента} \\
+			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
 			\midrule
-			\texttt{catboost\_v4a\_seed\_avg.csv} & Соло-бустинг (5 seeds) для оценки базы. \\
-			\texttt{blend\_seed\_avg\_90\_rnn10.csv} & \textbf{Основная ставка.} CB v4b (90\%) + RNN v2 (10\%). \\
-			\texttt{blend\_seed\_avg\_92\_rnn8.csv} & Микро-тюнинг (смещение в пользу бустинга). \\
-			\texttt{blend\_seed\_avg\_88\_rnn12.csv} & Микро-тюнинг (смещение в пользу нейросети). \\
-			\texttt{blend\_pseudo\_90\_rnn10.csv} & Псевдо-разметка (Риск-ставка). \\
+			\texttt{FINAL\_blend\_cb80\_mlp15\_xgb05} & \rmsleGood{1.65590} & \textbf{ФИНАЛЬНЫЙ ЧЕМПИОН (Мета-ансамбль)} \\
+			\texttt{FINAL\_blend\_cb85\_mlp15.csv} & \rmsleGood{1.65605} & Двуглавый бленд (Безопасный) \\
+			\texttt{catboost\_v5\_seed\_avg.csv} & \rmsleGood{1.65656} & Рекорд соло-модели (v5 признаки) \\
+			\texttt{blend\_seed\_avg\_92\_rnn8.csv} & 1.65878 & Бывший чемпион (v4b + RNN v2) \\
+			\texttt{blend\_seed\_avg\_90\_rnn10.csv} & 1.65884 & \\
+			\texttt{blend\_seed\_avg\_95\_rnn5.csv} & 1.65890 & \\
+			\texttt{frank\_cb70\_ziln20\_xgb5\_rnn5} & 1.65912 & Промежуточный бленд (v4) \\
+			\texttt{frank\_cb75\_ziln20\_rnn5.csv} & 1.65912 & \\
+			\texttt{blend\_pseudo\_90\_rnn10.csv} & 1.65929 & Эксперимент с псевдо-разметкой \\
+			\texttt{blend\_ortho\_90\_10.csv} & 1.65935 & \\
+			\texttt{frank\_cb70\_ziln15\_rnn15.csv} & 1.65977 & \\
+			\texttt{catboost\_v4a\_seed\_avg.csv} & 1.65984 & Базовый CatBoost v4 (Seed Avg) \\
+			\texttt{blend\_ortho\_85\_15.csv} & 1.65992 & \\
+			\texttt{catboost\_v4a\_baseline.csv} & 1.66049 & \\
+			\texttt{blend\_v4a\_ortho\_95\_05.csv} & 1.66071 & \\
+			\texttt{blend\_v4a\_ortho\_90\_10.csv} & 1.66113 & \\
+			\texttt{ziln\_v5\_v1\_submission.csv} & 1.66220 & Успех MLP с ZILN Loss на v5 фичах \\
+			\texttt{blend\_v4a60\_lgbm40.csv} & 1.66336 & \\
+			\texttt{xgboost\_v5\_submission.csv} & 1.66506 & XGBoost с логарифмированным таргетом \\
+			\texttt{mlp\_ziln\_submission.csv} & 1.66545 & MLP ZILN на v4 фичах \\
+			\texttt{catboost\_baseline\_sub.csv} & 1.67028 & Baseline v1 (от организаторов) \\
+			\texttt{xgboost\_log\_submission.csv} & 1.67102 & XGBoost v4 \\
 			\bottomrule
 		\end{tabular}
 	\end{table}
 	
-	\section{Стратегия: Жёсткое ансамблирование}
-	После оценки 5 запланированных сабмитов на Лидерборде, пайплайн будет переведен на стадию жесткого ансамблирования. Поиск идеальных весов (или построение мета-модели Stacking/Ridge) будет производиться автоматизированно через оптимизацию OOF-предсказаний на валидационном фолде.
+	\begin{table}[h!]
+		\centering\small
+		\caption{Полная история результатов (Часть 2: Остальные отправки)}
+		\vspace{0.2cm}
+		\begin{tabular}{l l p{8cm}}
+			\toprule
+			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
+			\midrule
+			\texttt{lgbm\_v3\_submission.csv} & 1.67115 & \\
+			\texttt{catboost\_v3\_submission.csv} & 1.67116 & \\
+			\texttt{catboost\_v4\_cumul\_sub.csv} & 1.67126 & \\
+			\texttt{catboost\_v4\_single\_sub.csv} & 1.67177 & \\
+			\texttt{blend\_cbv3\_80\_rnnv3\_19.csv} & 1.67380 & \\
+			\texttt{blend\_cbv3\_70\_rnnv3\_30.csv} & 1.67583 & \\
+			\texttt{ensemble\_cb70\_rnn30.csv} & 1.67588 & \\
+			\texttt{blend\_cbv3\_65\_rnnv3\_35.csv} & 1.67702 & \\
+			\texttt{lgbm\_v4\_submission.csv} & 1.68433 & Нестабильность LGBM \\
+			\texttt{ensemble\_v2\_cb70\_rnn30.csv} & 1.68803 & Утечка v2 \\
+			\texttt{ensemble\_v2\_cb60\_rnn40.csv} & 1.68942 & Утечка v2 \\
+			\texttt{catboost\_v2\_submission.csv} & 1.69009 & Утечка v2 \\
+			\texttt{lgbm\_v4\_submission.csv} & 1.70118 & \\
+			\texttt{rnn\_v4\_submission.csv} & 1.70489 & Соло RNN v4 \\
+			\texttt{rnn\_v2\_submission.csv} & 1.71792 & Соло RNN v2 \\
+			\texttt{catboost\_v4a\_zero\_hacked.csv} & 1.73573 & Провал гипотезы жестких нулей \\
+			\texttt{rnn\_baseline\_sub.csv} & 1.73624 & \\
+			\texttt{xgboost\_sqrt\_submission.csv} & 1.75422 & Провал трансформации Sqrt \\
+			\texttt{btyd\_blend\_btyd2\_cb8.csv} & 1.76655 & Провал вероятностной модели (BTYD) \\
+			\texttt{catboost\_tuned\_submission.csv} & 1.79400 & Провал Optuna v1 \\
+			\texttt{btyd\_blend\_btyd3\_cb7.csv} & 1.81827 & \\
+			\texttt{rnn\_v4\_submission.csv} & \rmsleBad{1.87947} & Утечка таргета \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
 	
 \end{document}
