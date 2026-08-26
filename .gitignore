@@ -16,15 +16,7 @@ data/processed/*
 !data/processed/.gitkeep
 
 # Глобальный игнор для тяжелых форматов
-*.parquet
 *.csv
-*.json
-
-# --- Модели (Models) ---
-models/*
-!models/.gitkeep
-*.cbm
-*.pth
 
 # --- Логи и артефакты ---
 catboost_info/
