@@ -29,7 +29,7 @@
 ## Структура репозитория
     ├── baseline/
     │   ├── baseline-seacrh-ltv.ipynb  # Baseline обучение
-    │   ├── sample_submit.csv          # Baseline сабмит
+    │   ├── sample_submit.csv          # Baseline сабмит - ИГНОРИРУЕТСЯ В GIT
     ├── data/
     │   ├── raw/                       # Сырые данные (train.parquet) - ИГНОРИРУЕТСЯ В GIT
     │   └── processed/                 # Сгенерированные фичи, веса моделей и сабмиты - ИГНОРИРУЕТСЯ В GIT
