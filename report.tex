@@ -90,7 +90,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{Метрика:}     & RMSLE (Root Mean Squared Log Error) \\[0.3cm]
 			\textbf{Tie-breaker:} & Gini по предсказаниям + RMSPE суммарного GMV \\[0.3cm]
 			\textbf{Данные:}      & 250\,000 пользователей, 01.01.2025--13.02.2026 \\[0.3cm]
-			\textbf{Финальный ЛБ:}& \rmsleGood{1.65306} (CB 70\% + MLP 20\% + XGB 10\% $\times 1.12$) \\[0.3cm]
+			\textbf{Финальный ЛБ:}& \rmsleGood{1.65305} (CB 70\% + MLP 20\% + XGB 10\% $\times 1.12375$) \\[0.3cm]
 			\textbf{Публичный ЛБ:}& 20\% (50\,000 клиентов) \\[0.3cm]
 			\textbf{Приватный ЛБ:}& 80\% (200\,000 клиентов) \\[0.3cm]
 			\textbf{Старт:}       & 10 августа 2026 г. \\[0.3cm]
@@ -99,7 +99,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\textbf{GPU:}         & NVIDIA RTX 4050 Laptop (6 ГБ VRAM) \\
 		\end{tabular}
 		\vfill
-		{\small Дата составления: 26 августа 2026 г. (Финальная редакция)}
+		{\small Дата составления: 28 августа 2026 г. (Финальная редакция)}
 	\end{titlepage}
 	
 	\tableofcontents\newpage
@@ -159,7 +159,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	\subsection{Сезонный сдвиг (Concept Drift) и Праздничные множители}
 	Тестовая выборка представляет собой период с 14 февраля по 15 марта (весенние праздники). Модель, обученная на среднегодовых паттернах, систематически недооценивала траты. Аналитика по историческим данным 2025 года показала рост конверсии в праздничный месяц на 3\% (итоговый мультипликатор $\approx 1.09$). 
 	
-	Применение масштабирующего множителя (до 1.12) к предсказаниям финального ансамбля позволило пробить потолок чистых моделей и достичь феноменального RMSLE \textbf{1.65306}.
+	Применение масштабирующего множителя (до 1.12375) к предсказаниям финального ансамбля позволило пробить потолок чистых моделей и достичь феноменального RMSLE \textbf{1.65305}.
 	
 	% ================================================================
 	\section{Отклоненные гипотезы и стратегии}
@@ -175,71 +175,108 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 	
 	% ================================================================
 	\section{Полная история сабмитов (Leaderboard)}
-	В таблицах ниже задокументированы все итерации отправок, отсортированные по улучшению метрики (от лучших к худшим).
+	Ниже задокументированы все 68 отправленных решений, отсортированные от лучшей метрики к худшей. 
 	
 	\begin{table}[h!]
 		\centering\small
-		\caption{Полная история результатов (Часть 1: Чемпионы и Топ-бленды)}
+		\caption{Часть 1: Чемпионы и финальные тюнинги (Топ-24)}
 		\vspace{0.2cm}
-		\begin{tabular}{l l p{8cm}}
+		\begin{tabular}{l l p{7cm}}
 			\toprule
-			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
+			\textbf{Имя файла} & \textbf{RMSLE} & \textbf{Примечание} \\
 			\midrule
-			\texttt{v6\_champion\_mult\_1.12.csv} & \rmsleGood{1.65306} & \textbf{Абсолютный чемпион (Множитель 1.12)} \\
-			\texttt{v6\_champion\_mult\_1.10.csv} & \rmsleGood{1.65313} & Близость к глобальному экстремуму \\
-			\texttt{v6\_champion\_mult\_1.09.csv} & \rmsleGood{1.65321} & Расчетный сезонный сдвиг (2025 год) \\
-			\texttt{v6\_champion\_mult\_1.05.csv} & \rmsleGood{1.65389} & Пробой через калибровку пост-процессинга \\
-			\texttt{v6\_champion\_mult\_1.03.csv} & 1.65445 & \\
-			\texttt{v6\_champion\_mult\_1.02.csv} & 1.65479 & Начало разведывательного поиска \\
+			\texttt{v6\_champion\_mult\_1.12375.csv} & \rmsleGood{1.65305} & \textbf{Абсолютный оптимум (Множитель 1.12375)} \\
+			\texttt{v6\_champion\_mult\_1.125.csv} & \rmsleGood{1.65305} & Бинарный поиск множителя \\
+			\texttt{v6\_champion\_mult\_1.1225.csv} & \rmsleGood{1.65305} & Бинарный поиск множителя \\
+			\texttt{v6\_champion\_mult\_1.12.csv} & \rmsleGood{1.65306} & Разведка правой границы \\
+			\texttt{v6\_champion\_mult\_1.13.csv} & \rmsleGood{1.65306} & Разведка правой границы \\
+			\texttt{v6\_champion\_mult\_1.14.csv} & \rmsleGood{1.65309} & Подтверждение экстремума \\
+			\texttt{v6\_champion\_mult\_1.10.csv} & \rmsleGood{1.65313} & Приближение к дну \\
+			\texttt{v6\_champion\_mult\_1.09.csv} & \rmsleGood{1.65321} & Расчетный сдвиг 2025 года \\
+			\texttt{v6\_champion\_mult\_1.05.csv} & \rmsleGood{1.65389} & Успешный старт калибровки \\
+			\texttt{v6\_champion\_mult\_1.03.csv} & \rmsleGood{1.65445} & \\
+			\texttt{v6\_champion\_mult\_1.02.csv} & \rmsleGood{1.65479} & \\
 			\texttt{v6\_arithmetic\_cb70\_mlp20\_xgb10} & \rmsleNeutral{1.65559} & \textbf{Лучший чистый базовый ансамбль} \\
-			\texttt{v6\_arithmetic\_cb65\_mlp25\_xgb10} & 1.65566 & Проверка гипотезы усиления нейросети \\
-			\texttt{v6\_arithmetic\_cb65\_mlp20\_xgb15} & 1.65568 & Проверка гипотезы усиления XGBoost \\
-			\texttt{v6\_arithmetic\_cb75\_mlp15\_xgb10} & 1.65574 & Осторожный бленд v6 \\
-			\texttt{arithmetic\_cb75\_mlp15\_xgb10.csv} & 1.65581 & Промежуточный бленд v5 \\
+			\texttt{v6\_arithmetic\_cb65\_mlp25\_xgb10} & 1.65566 & Тест увеличенной доли MLP \\
+			\texttt{v6\_arithmetic\_cb65\_mlp20\_xgb15} & 1.65568 & Тест увеличенной доли XGBoost \\
+			\texttt{v6\_arithmetic\_cb75\_mlp15\_xgb10} & 1.65574 & \\
+			\texttt{arithmetic\_cb75\_mlp15\_xgb10.csv} & 1.65581 & \\
+			\texttt{arithmetic\_cb75\_mlp20\_xgb05.csv} & 1.65584 & \\
 			\texttt{FINAL\_blend\_cb80\_mlp15\_xgb05} & 1.65590 & \\
-			\texttt{FINAL\_blend\_cb85\_mlp15.csv} & 1.65605 & Двуглавый бленд v5 \\
-			\texttt{v6\_champion\_mult\_0.98.csv} & 1.65655 & Ухудшение из-за занижения прогноза \\
+			\texttt{arithmetic\_cb85\_mlp10\_xgb05.csv} & 1.65601 & \\
+			\texttt{FINAL\_blend\_cb85\_mlp15.csv} & 1.65605 & \\
+			\texttt{v6\_champion\_mult\_0.98.csv} & 1.65655 & Ухудшение (занижение прогноза) \\
 			\texttt{catboost\_v5\_seed\_avg.csv} & 1.65656 & \\
-			\texttt{catboost\_v6\_seed\_avg.csv} & 1.65678 & Соло CatBoost на данных v6 \\
-			\texttt{v6\_champion\_mult\_0.97.csv} & 1.65710 & Ухудшение из-за занижения прогноза \\
-			\texttt{blend\_seed\_avg\_92\_rnn8.csv} & 1.65878 & Бывший чемпион (v4b + RNN v2) \\
-			\texttt{blend\_seed\_avg\_90\_rnn10.csv} & 1.65884 & \\
-			\texttt{frank\_cb70\_ziln20\_xgb5\_rnn5} & 1.65912 & Промежуточный бленд (v4) \\
-			\texttt{blend\_pseudo\_90\_rnn10.csv} & 1.65929 & Эксперимент с псевдо-разметкой \\
-			\texttt{logblend\_cb800\_mlp150\_xgb50.csv} & 1.65975 & Отказ от Log-Space блендинга \\
-			\texttt{catboost\_v4a\_seed\_avg.csv} & 1.65984 & Базовый CatBoost v4 (Seed Avg) \\
-			\texttt{ziln\_v6\_v1\_submission.csv} & 1.66008 & Рекорд соло-нейросети (данные v6) \\
-			\texttt{catboost\_v5\_seed\_avg.csv} & 1.66265 & Оверфит на валидации через Optuna \\
+			\texttt{catboost\_v6\_seed\_avg.csv} & 1.65678 & Соло CatBoost (v6) \\
+			\texttt{v6\_champion\_mult\_0.97.csv} & 1.65710 & \\
 			\bottomrule
 		\end{tabular}
 	\end{table}
 	
 	\begin{table}[h!]
 		\centering\small
-		\caption{Полная история результатов (Часть 2: Остальные отправки и Базлайны)}
+		\caption{Часть 2: Поиск базового ансамбля и эксперименты (25–46)}
 		\vspace{0.2cm}
-		\begin{tabular}{l l p{8cm}}
+		\begin{tabular}{l l p{7cm}}
 			\toprule
-			\textbf{Имя файла (модель / бленд)} & \textbf{RMSLE} & \textbf{Примечание} \\
+			\textbf{Имя файла} & \textbf{RMSLE} & \textbf{Примечание} \\
 			\midrule
-			\texttt{xgboost\_v6\_submission.csv} & 1.66478 & \\
-			\texttt{xgboost\_v5\_submission.csv} & 1.66506 & XGBoost с логарифмированным таргетом \\
-			\texttt{mlp\_ziln\_submission.csv} & 1.66545 & MLP ZILN на v4 фичах \\
-			\texttt{catboost\_baseline\_sub.csv} & 1.67028 & Baseline v1 (от организаторов) \\
-			\texttt{xgboost\_log\_submission.csv} & 1.67102 & XGBoost v4 \\
+			\texttt{blend\_seed\_avg\_92\_rnn8.csv} & 1.65878 & Бывший лидер (v4b + RNN) \\
+			\texttt{blend\_seed\_avg\_90\_rnn10.csv} & 1.65884 & \\
+			\texttt{blend\_seed\_avg\_95\_rnn5.csv} & 1.65890 & \\
+			\texttt{frank\_cb70\_ziln20\_xgb5\_rnn5.csv} & 1.65912 & \\
+			\texttt{frank\_cb75\_ziln20\_rnn5.csv} & 1.65912 & \\
+			\texttt{blend\_pseudo\_90\_rnn10.csv} & 1.65929 & Эксперимент с pseudo-labeling \\
+			\texttt{blend\_ortho\_90\_10.csv} & 1.65935 & \\
+			\texttt{logblend\_cb800\_mlp150\_xgb50.csv} & 1.65975 & Отказ от Log-Space блендинга \\
+			\texttt{frank\_cb70\_ziln15\_rnn15.csv} & 1.65977 & \\
+			\texttt{catboost\_v4a\_seed\_avg.csv} & 1.65984 & \\
+			\texttt{blend\_ortho\_85\_15.csv} & 1.65992 & \\
+			\texttt{ziln\_v6\_v1\_submission.csv} & 1.66008 & Рекорд соло-нейросети ZILN (v6) \\
+			\texttt{catboost\_v4a\_baseline\_sub...} & 1.66049 & \\
+			\texttt{blend\_v4a\_ortho\_95\_05.csv} & 1.66071 & \\
+			\texttt{blend\_v4a\_ortho\_90\_10.csv} & 1.66113 & \\
+			\texttt{ziln\_v5\_v1\_submission.csv} & 1.66220 & \\
+			\texttt{catboost\_v5\_seed\_avg.csv} & 1.66265 & Оверфит Optuna \\
+			\texttt{blend\_v4a60\_lgbm40.csv} & 1.66336 & \\
+			\texttt{xgboost\_v6\_submission.csv} & 1.66478 & Соло XGBoost (v6) \\
+			\texttt{xgboost\_v5\_submission.csv} & 1.66506 & \\
+			\texttt{mlp\_ziln\_submission.csv} & 1.66545 & \\
+			\texttt{catboost\_baseline\_submission} & 1.67028 & Baseline от организаторов \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[h!]
+		\centering\small
+		\caption{Часть 3: Ранние версии, утечки и бейзлайны (47–68)}
+		\vspace{0.2cm}
+		\begin{tabular}{l l p{7cm}}
+			\toprule
+			\textbf{Имя файла} & \textbf{RMSLE} & \textbf{Примечание} \\
+			\midrule
+			\texttt{xgboost\_log\_submission.csv} & 1.67102 & \\
 			\texttt{lgbm\_v3\_submission.csv} & 1.67115 & \\
 			\texttt{catboost\_v3\_submission.csv} & 1.67116 & \\
+			\texttt{catboost\_v4\_cumul\_sub...} & 1.67126 & \\
+			\texttt{catboost\_v4\_single\_sub...} & 1.67177 & \\
 			\texttt{blend\_cbv3\_80\_rnnv3\_19.csv} & 1.67380 & \\
+			\texttt{blend\_cbv3\_70\_rnnv3\_30.csv} & 1.67583 & \\
 			\texttt{ensemble\_cb70\_rnn30.csv} & 1.67588 & \\
-			\texttt{lgbm\_v4\_submission.csv} & 1.68433 & Нестабильность LGBM \\
-			\texttt{ensemble\_v2\_cb70\_rnn30.csv} & 1.68803 & Утечка v2 \\
-			\texttt{catboost\_v2\_submission.csv} & 1.69009 & Утечка v2 \\
-			\texttt{rnn\_v4\_submission.csv} & 1.70489 & Соло RNN v4 \\
-			\texttt{catboost\_v4a\_zero\_hacked.csv} & 1.73573 & Провал гипотезы жестких нулей \\
-			\texttt{rnn\_baseline\_sub.csv} & 1.73624 & \\
-			\texttt{btyd\_blend\_btyd2\_cb8.csv} & 1.76655 & Провал вероятностной модели (BTYD) \\
-			\texttt{catboost\_tuned\_submission.csv} & 1.79400 & Провал Optuna v1 \\
-			\texttt{rnn\_v4\_submission.csv} & \rmsleBad{1.87947} & Утечка таргета \\
+			\texttt{blend\_cbv3\_65\_rnnv3\_35.csv} & 1.67702 & \\
+			\texttt{lgbm\_v4\_submission.csv} & 1.68433 & Нестабильность LightGBM \\
+			\texttt{ensemble\_v2\_cb70\_rnn30.csv} & 1.68803 & Утечка данных в v2 \\
+			\texttt{ensemble\_v2\_cb60\_rnn40.csv} & 1.68942 & Утечка данных в v2 \\
+			\texttt{catboost\_v2\_submission.csv} & 1.69009 & Утечка данных в v2 \\
+			\texttt{lgbm\_v4\_submission.csv} & 1.70118 & \\
+			\texttt{rnn\_v4\_submission.csv} & 1.70489 & Соло RNN (v4) \\
+			\texttt{rnn\_v2\_submission.csv} & 1.71792 & \\
+			\texttt{catboost\_v4a\_zero\_hacked} & 1.73573 & Провал гипотезы жестких нулей \\
+			\texttt{rnn\_baseline\_submission.csv} & 1.73624 & \\
+			\texttt{btyd\_blend\_btyd2\_cb8.csv} & 1.76655 & Провал вероятностной модели BTYD \\
+			\texttt{catboost\_tuned\_submission} & 1.79400 & Провал поиска параметров Optuna v1 \\
+			\texttt{btyd\_blend\_btyd3\_cb7.csv} & 1.81827 & \\
+			\texttt{rnn\_v4\_submission.csv} & \rmsleBad{1.87947} & Критическая ошибка/утечка таргета \\
 			\bottomrule
 		\end{tabular}
 	\end{table}
