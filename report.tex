@@ -14,6 +14,7 @@
 \usepackage{titlesec}
 \usepackage{mdframed}
 \usepackage{listings}
+\usepackage{float}
 \setlength{\headheight}{13.6pt}
 
 \geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2cm}
@@ -32,7 +33,7 @@
 \definecolor{bgwarning}{RGB}{255, 243, 224}
 \definecolor{bgdanger}{RGB}{255, 235, 238}
 
-\hypersetup{colorlinks=true, linkcolor=primary, urlcolor=primary}
+\hypersetup{colorlinks=true, linkcolor=primary, urlcolor=primary, citecolor=primary}
 
 % --- Заголовки секций ---
 \titleformat{\section}{\Large\bfseries\color{primary}}{\thesection.}{0.5em}{}
@@ -46,23 +47,6 @@
 \fancyhead[R]{\small\color{darkgray} Егоров Кирилл}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
-
-% --- Цветные блоков ---
-\newmdenv[backgroundcolor=lightgray, linecolor=primary, linewidth=2pt,
-leftline=true, rightline=false, topline=false, bottomline=false,
-innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{infobox}
-
-\newmdenv[backgroundcolor=bgsuccess, linecolor=success, linewidth=2pt,
-leftline=true, rightline=false, topline=false, bottomline=false,
-innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{successbox}
-
-\newmdenv[backgroundcolor=bgwarning, linecolor=warning, linewidth=2pt,
-leftline=true, rightline=false, topline=false, bottomline=false,
-innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{warningbox}
-
-\newmdenv[backgroundcolor=bgdanger, linecolor=danger, linewidth=2pt,
-leftline=true, rightline=false, topline=false, bottomline=false,
-innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 
 \lstset{backgroundcolor=\color{codegray}, basicstyle=\small\ttfamily,
 	breaklines=true, frame=single, rulecolor=\color{gray}, numbers=left,
@@ -88,96 +72,108 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 		\begin{tabular}{ll}
 			\textbf{Участник:}    & Кирилл Егоров \\[0.3cm]
 			\textbf{Метрика:}     & RMSLE (Root Mean Squared Log Error) \\[0.3cm]
-			\textbf{Tie-breaker:} & Gini по предсказаниям + RMSPE суммарного GMV \\[0.3cm]
 			\textbf{Данные:}      & 250\,000 пользователей, 01.01.2025--13.02.2026 \\[0.3cm]
 			\textbf{Финальный ЛБ:}& \rmsleGood{1.65305} (CB 70\% + MLP 20\% + XGB 10\% $\times 1.12375$) \\[0.3cm]
-			\textbf{Публичный ЛБ:}& 20\% (50\,000 клиентов) \\[0.3cm]
-			\textbf{Приватный ЛБ:}& 80\% (200\,000 клиентов) \\[0.3cm]
-			\textbf{Старт:}       & 10 августа 2026 г. \\[0.3cm]
-			\textbf{Дедлайн:}     & $\approx$ 31 августа 2026 г. \\[0.3cm]
-			\textbf{Лимит:}       & 5 сабмитов / день, 2 финальных решения \\[0.3cm]
 			\textbf{GPU:}         & NVIDIA RTX 4050 Laptop (6 ГБ VRAM) \\
 		\end{tabular}
 		\vfill
-		{\small Дата составления: 28 августа 2026 г. (Финальная редакция)}
+		{\small Дата составления: \today}
 	\end{titlepage}
 	
 	\tableofcontents\newpage
 	\pagenumbering{arabic}
 	
 	% ================================================================
-	\section{Описание задачи и данных}
+	\section{Теоретический базис и математическая модель}
 	
-	Задача --- предсказание \textbf{Customer Lifetime Value (LTV)} на горизонте 30 дней.
-	Особенности целевой переменной: данные сильно \textbf{zero-inflated}. Около 45.1\% пользователей в обучающей выборке не совершают ни одной покупки (target = 0).
+	Оценка качества предсказаний Customer Lifetime Value (LTV) производится с помощью логарифмической метрики Root Mean Squared Logarithmic Error (RMSLE). 
+	Фундаментальная сложность заключается в смешанном (Zero-Inflated) распределении целевой переменной: порядка 46.4\% пользователей в выборке не совершают ни одной транзакции в прогнозном окне (\texttt{target = 0}) \cite{ref:train}. %[cite: 2]
 	
-	\begin{dangerbox}
-		\textbf{Публичный / Приватный лидерборд: 20\% / 80\%!}\\
-		Оценка на публичном лидерборде вычисляется только по 50\,000 из 250\,000 клиентов.
-		Это означает высокий риск \emph{public-private shake-up}. Оптимизация моделей строилась на строгой локальной кросс-валидации (OOF) с последующей ортогональной оптимизацией весов ансамбля и масштабирующих множителей.
-	\end{dangerbox}
+	\subsection{Нейросетевая модель: Tabular MLP и ZILN}
+	Для корректного моделирования нулевых и положительных трат была разработана вероятностная архитектура с применением функции потерь \textbf{Zero-Inflated LogNormal (ZILN)}. Сеть аппроксимирует три логита $\mathbf{z} = (z_0, z_1, z_2)$, которые трансформируются в параметры распределения \cite{ref:train}: %[cite: 2]
+	$$ p = \frac{1}{1 + \exp(-z_0)}, \quad \mu = z_1, \quad \sigma = \log(1 + \exp(z_2)) $$
 	
-	% ================================================================
-	\section{Эволюция признакового пространства и схема валидации}
-	Для временных рядов использовался строго \textbf{Walk-Forward CV} ($stride=14$ дней). Схема была расширена до \textbf{5 фолдов} (min\_history=180 дней) для построения устойчивого мета-ансамбля.
+	Итоговая функция потерь объединяет бинарную кросс-энтропию (BCE) и негативное логарифмическое правдоподобие (NLL) \cite{ref:google_ltv, ref:train}: %[cite: 2]
+	$$
+	\mathcal{L} = - \mathbb{I}_{y=0} \log(1-p) - \mathbb{I}_{y>0} \left[ \log(p) - \frac{\log(\sigma \sqrt{2\pi}) + (\log y - \mu)^2}{2\sigma^2} \right]
+	$$
+	Для извлечения финального предсказания применена эмпирически выведенная формула, напрямую минимизирующая логарифмический штраф метрики хакатона \cite{ref:train}: %[cite: 2]
+	$$ \hat{y} = \exp(p \cdot \mu) - 1 $$
 	
-	\subsection{Исторические версии данных (v1 -- v5)}
-	\begin{itemize}[nosep]
-		\item \textbf{v1--v2 (Базовые агрегации):} Сбор простых счетчиков действий и сумм. На этом этапе была допущена ошибка "машины времени" (утечка таргета в обучающие признаки), которая привела к ложно-оптимистичным результатам (до 1.69009) и была устранена в v3.
-		\item \textbf{v3--v4 (RFM и временные окна):} Внедрение строгой Walk-Forward валидации. Расчет классических RFM-признаков (Recency, Frequency, Monetary) по окнам от 3 до 365 дней.
-		\item \textbf{v5 (Взаимосвязи и тренды):} Добавление вторичных признаков, таких как конверсия из поиска в корзину и тренды отношения трат за 7 дней к 30 дням.
-	\end{itemize}
+	\subsection{Градиентный бустинг: CatBoost и XGBoost}
+	Обе древовидные модели оптимизировались под метрику RMSE на предварительно логарифмированном таргете $\tilde{y}_i = \log(1 + y_i)$ \cite{ref:train}. %[cite: 2]
 	
-	\subsection{Финальная версия v6 (Data-Centric AI)}
-	Сгенерировано 435 признаков. Ключевые нововведения, обеспечившие максимальный прирост метрики:
-	\begin{itemize}[nosep]
-		\item \textbf{Межпокупочные паттерны:} mean/std gap между заказами, метрики регулярности (\texttt{order\_regularity\_cv}).
-		\item \textbf{Lifecycle Trajectory:} Ускорение заказов (\texttt{order\_acceleration}) и GMV slope.
-		\item \textbf{Винзоризация таргета (Target Capping):} Ограничение целевой переменной на этапе обучения по 99.9-му перцентилю (4000) для защиты моделей от аномальных "китов".
-		\item \textbf{Dormancy \& Gaps:} Обработка пустых интервалов числом $999.0$ с введением жестких флагов \texttt{is\_single\_buyer} и \texttt{is\_dormant} (спячка > 120 дней).
-	\end{itemize}
+	\textbf{CatBoost} использует симметричные (oblivious) деревья решений, где один и тот же предикат расщепления применяется ко всему уровню дерева \cite{ref:catboost}. Итоговый прогноз формируется суммированием весов листьев:
+	$$ F(x) = \sum_{k=1}^K c_k \mathbb{I}(x \in R_k) $$
+	
+	\textbf{XGBoost} строит несимметричные деревья, применяя алгоритм гистограммного поиска сплитов. Применяется строгая оптимизация с $L_1$ ($\alpha$) и $L_2$ ($\lambda$) регуляризацией листьев $w_k$ \cite{ref:xgboost, ref:train}: %[cite: 2]
+	$$ \mathcal{L}_{\text{XGB}} = \sum_{i=1}^N \frac{1}{2} (\tilde{y}_i - \hat{\tilde{y}}_i)^2 + \sum_{k=1}^K \left( \gamma T_k + \frac{1}{2}\lambda \|w_k\|^2 + \alpha \|w_k\|_1 \right) $$
+	В пайплайне заданы веса $\alpha = 2.0, \lambda = 5.0$, что жестко штрафует сложные деревья и выявляет скрытые нелинейные паттерны \cite{ref:train}. %[cite: 2]
 	
 	% ================================================================
-	\section{Архитектура Мета-Ансамбля (Stacking)}
-	Финальное решение построено на максимизации \textbf{независимости ошибок} (Error Orthogonality). Базовый ансамбль состоит из трех SOTA-моделей. В ходе сканирования (ternary search) весов на чистых данных v6 был подтвержден глобальный локальный оптимум (RMSLE = 1.65559) при распределении:
+	\section{Архитектура решения и инженерия признаков}
 	
-	\subsection{1. CatBoostRegressor (Базовый фундамент, Вес: 70\%)}
-	Градиентный бустинг с \emph{level-wise} (oblivious) построением деревьев. Применена техника \textbf{Seed Averaging}: усреднение предсказаний 5 моделей с разными seed-значениями для радикального снижения дисперсии.
+	\subsection{Схема валидации и алгоритмы стабилизации}
+	Для исключения эффекта «заглядывания в будущее» реализован алгоритм \textbf{Walk-Forward Cross-Validation} \cite{ref:data}. %[cite: 1] 
+	Анкорная дата $t_{\text{anchor}}$ последовательно сдвигается на шаг $S$ (14 дней), формируя независимые обучающие и валидационные блоки:
+	$$ \text{Train}_k = \{ (x_i, y_i) \mid t_i \in [t_{\text{anchor}}^{(k)} - H, t_{\text{anchor}}^{(k)}] \} $$
+	$$ \text{Val}_k = \{ (x_i, y_i) \mid t_i \in [t_{\text{anchor}}^{(k)} + 1, t_{\text{anchor}}^{(k)} + 30] \} $$
+	где $H$ — глубина исторического окна (180 дней) \cite{ref:data}. %[cite: 1]
 	
-	\subsection{2. Tabular MLP + ZILN Loss (Вероятностная нейросеть, Вес: 20\%)}
-	Полносвязный 4-слойный перцептрон, обученный на сглаженных признаках через \texttt{QuantileTransformer}. Использует функцию потерь ZILN (\emph{Zero-Inflated Lognormal Loss}), которая элегантно и одновременно решает задачи классификации и регрессии в едином пайплайне.
+	Для снижения дисперсии градиентного бустинга применена техника \textbf{Seed Averaging}. Итоговый прогноз базовой модели CatBoost $\hat{y}_{\text{CB}}$ формируется как арифметическое среднее предсказаний 5 моделей, обученных с различными сидами \cite{ref:train}: %[cite: 2]
+	$$ \hat{y}_{\text{CB}}(x) = \frac{1}{5} \sum_{m=1}^5 F_m(x; \text{seed}_m) $$
 	
-	\subsection{3. XGBoost (Охотник на нелинейности, Вес: 10\%)}
-	Асимметричный градиентный бустинг с глубокой L1-регуляризацией (\texttt{reg\_alpha = 2.0}).
+	\subsection{Конвейер генерации признаков (Feature Engineering)}
+	На базе библиотеки \textbf{Polars} реализована генерация 437 признаков \cite{ref:data}. %[cite: 1]
 	
-	% ================================================================
-	\section{Анализ преодоленных проблем}
-	
-	\subsection{Взрыв градиентов MLP из-за StandardScaler}
-	Применение классического \texttt{StandardScaler} привело к катастрофическому росту Loss. Проблема решена переходом на \textbf{\texttt{QuantileTransformer}} (\texttt{output\_distribution='normal'}), который аккуратно уложил все выбросы в гауссиану.
-	
-	\subsection{Сезонный сдвиг (Concept Drift) и Праздничные множители}
-	Тестовая выборка представляет собой период с 14 февраля по 15 марта (весенние праздники). Модель, обученная на среднегодовых паттернах, систематически недооценивала траты. Аналитика по историческим данным 2025 года показала рост конверсии в праздничный месяц на 3\% (итоговый мультипликатор $\approx 1.09$). 
-	
-	Применение масштабирующего множителя (до 1.12375) к предсказаниям финального ансамбля позволило пробить потолок чистых моделей и достичь феноменального RMSLE \textbf{1.65305}.
-	
-	% ================================================================
-	\section{Отклоненные гипотезы и стратегии}
-	В процессе разработки был протестирован и отвергнут ряд подходов (см. таблицу сабмитов):
 	\begin{itemize}
-		\item \textbf{Tweedie Loss:} Классическая функция потерь для zero-inflated распределений. Эксперименты с Tweedie в бустингах показали результаты хуже, чем стандартная оптимизация RMSE на логарифмированном таргете $\log(1 + y)$ или использование кастомного ZILN в MLP.
-		\item \textbf{Two-Stage Pipeline (Двухэтапная модель):} Идея раздельного обучения бинарного классификатора ($P(y>0)$) и регрессора для покупателей. Была отклонена, так как MLP с ZILN-loss решает эту задачу математически точнее внутри единой архитектуры (совместное обучение $p$ и $\mu$), предотвращая накопление ошибки (error compounding) между моделями.
-		\item \textbf{Псевдо-разметка (Pseudo-Labeling):} Эксперимент с добавлением предсказаний с тестовой выборки в тренировочный сет был свернут из-за высокого риска жесткого переобучения на публичный лидерборд (учитывая сплит 20\% / 80\%, доверять паблику на 100\% было опасно).
-		\item \textbf{Эмбеддинги Event2Vec (Look-ahead bias):} Обучение Word2Vec на всей истории без строгой Walk-Forward изоляции приводило к заглядыванию в будущее. Честная изоляция эмбеддингов внутри фолдов не дала ожидаемого буста метрики из-за высокой разреженности последовательностей покупок.
-		\item \textbf{Вероятностные модели BTYD (Buy Till You Die):} Модели вроде BG/NBD показали крайне слабую способность предсказывать LTV на коротком горизонте (30 дней) для наших данных (RMSLE > 1.76).
-		\item \textbf{Логарифмический блендинг:} Усреднение логарифмов предсказаний (геометрическое среднее) слишком сильно занижало прогнозы для крупных покупателей по сравнению с классическим арифметическим усреднением.
+		\item \textbf{Lifecycle Trajectory:} Отношение трат за последовательные периоды позволило вычислить метрики ускорения заказов (\texttt{order\_acceleration}):
+		$$ \text{Accel} = \frac{\text{Ord}_{\text{w1}} + \epsilon}{\text{Ord}_{\text{w2}} + \epsilon} - \frac{\text{Ord}_{\text{w3}} + \epsilon}{\text{Ord}_{\text{w4}} + \epsilon} $$
+		\item \textbf{Межпокупочные интервалы (Gaps):} Расчет математического ожидания (\texttt{mean\_order\_gap}) и стандартного отклонения (\texttt{std\_order\_gap}). Коэффициент вариации $\sigma / \mu$ (\texttt{order\_regularity\_cv}) позволил оценивать стабильность спроса. Пустые интервалы заполнялись значением $999.0$ \cite{ref:data}. %[cite: 1]
+		\item \textbf{Индикация оттока:} Созданы бинарные флаги \texttt{is\_single\_buyer} и \texttt{is\_dormant}. Последний активируется для пользователей без покупок более 120 дней \cite{ref:data}. %[cite: 1]
+		\item \textbf{Винзоризация таргета (Target Capping):} Целевая переменная жестко ограничивалась по 99.9-му перцентилю ($4000.0$) для защиты градиентов от аномальных «китов» \cite{ref:data}. %[cite: 1]
 	\end{itemize}
 	
 	% ================================================================
-	\section{Полная история сабмитов (Leaderboard)}
-	Ниже задокументированы все 68 отправленных решений, отсортированные от лучшей метрики к худшей. 
+	\section{Успешные исследования и тестирование гипотез}
 	
-	\begin{table}[h!]
+	\textbf{1. Опровержение гипотезы раздельных моделей (Two-Stage Pipeline).} 
+	Обучение отдельного бинарного классификатора и регрессора приводило к перемножению ошибок моделей. Внедрение единой нейросети (Tabular MLP) с функцией ZILN Loss математически корректно связало вероятности $p$ и $\mu$ на уровне градиентов, что дало значительный прирост OOF-метрики \cite{ref:train}. %[cite: 2]
+	
+	\textbf{2. Трансформация признакового пространства.}
+	Использование \texttt{StandardScaler} приводило к коллапсу нейросети из-за выбросов. Переход на \texttt{QuantileTransformer} жестко нормализовал все признаки в идеальную гауссиану в границах $[-5.0, 5.0]$, обеспечив стабильную сходимость \cite{ref:train}. %[cite: 2]
+	
+	\textbf{3. Выявление сезонного сдвига (Seasonal Concept Drift).}
+	Анализ исторических логов показал, что тестовая выборка (14.02 - 15.03) подвержена весенней сезонности. По данным 2025 года конверсия в этот месяц росла с 37.23\% до 40.29\%, а средний чек с 59.53 до 59.97 \cite{ref:tests}. %[cite: 3] 
+	Был рассчитан теоретический мультипликатор $1.0901$, который в ходе бинарного поиска был уточнен до эмпирического оптимума $1.12375$ \cite{ref:tests}. %[cite: 3]
+	
+	% ================================================================
+	\section{Анализ отвергнутых гипотез}
+	
+	Опираясь на историю отправок (раздел 5), ряд подходов был классифицирован как математически или алгоритмически неэффективный для текущей задачи \cite{ref:report_old}: %[cite: 5]
+	
+	\begin{itemize}
+		\item \textbf{Вероятностные BTYD-модели (Buy Till You Die):} Классические модели (BG/NBD) показали полную неспособность прогнозировать LTV на коротком 30-дневном горизонте. Сабмиты \texttt{btyd\_blend\_...} продемонстрировали худшие результаты (RMSLE > 1.76) \cite{ref:report_old}. %[cite: 5]
+		\item \textbf{Логарифмический блендинг (Log-Space Blending):} Геометрическое усреднение предсказаний (\texttt{logblend\_...}) слишком сильно пессимизировало прогнозы для крупных покупателей, уступив линейному арифметическому бленду (RMSLE 1.65975) \cite{ref:report_old}. %[cite: 5]
+		\item \textbf{Псевдо-разметка (Pseudo-labeling):} Интеграция тестовых предсказаний обратно в тренировочный сет (\texttt{blend\_pseudo\_...}) привела к жесткому переобучению на Public LB и ухудшению метрики \cite{ref:report_old}. %[cite: 5]
+		\item \textbf{Автоматический тюнинг (Optuna):} Поиск гиперпараметров (\texttt{catboost\_tuned\_...}) вызвал переобучение на валидационной выборке (RMSLE 1.79400). Ручной подбор с глубокой регуляризацией оказался стабильнее \cite{ref:report_old}. %[cite: 5]
+		\item \textbf{Принудительное обнуление (Zero-hacked):} Эвристическое зануление прогнозов для «спящих» пользователей (\texttt{catboost\_v4a\_zero\_hacked}) нарушило калибровку логнормального распределения и уронило метрику до 1.73573 \cite{ref:report_old}. %[cite: 5]
+	\end{itemize}
+	
+	% ================================================================
+	\section{Валидация пайплайна и результаты}
+	
+	Для финального решения использовался арифметический блендинг предсказаний с весами, оптимизированными для достижения максимальной ортогональности (независимости) ошибок \cite{ref:train}: %[cite: 2]
+	\begin{itemize}
+		\item \textbf{CatBoost (70\%):} Стабильный базовый прогноз (OOF RMSLE: 1.66115).
+		\item \textbf{Tabular MLP ZILN (20\%):} Сглаживает нулевых покупателей (OOF RMSLE: 1.66912).
+		\item \textbf{XGBoost (10\%):} Корректировщик нелинейностей (OOF RMSLE: 1.64183).
+	\end{itemize}
+	
+	Итоговый бленд без масштабирования показал OOF RMSLE 1.65559, а применение сезонного множителя 1.12375 вывело решение на финальный скор \textbf{1.65305} \cite{ref:tests, ref:report_old}. %[cite: 3, 5] 
+	Ниже представлена полная эволюция качества пайплайна.
+	
+	\begin{table}[H]
 		\centering\small
 		\caption{Часть 1: Чемпионы и финальные тюнинги (Топ-24)}
 		\vspace{0.2cm}
@@ -213,7 +209,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 		\end{tabular}
 	\end{table}
 	
-	\begin{table}[h!]
+	\begin{table}[H]
 		\centering\small
 		\caption{Часть 2: Поиск базового ансамбля и эксперименты (25–46)}
 		\vspace{0.2cm}
@@ -247,7 +243,7 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 		\end{tabular}
 	\end{table}
 	
-	\begin{table}[h!]
+	\begin{table}[H]
 		\centering\small
 		\caption{Часть 3: Ранние версии, утечки и бейзлайны (47–68)}
 		\vspace{0.2cm}
@@ -280,5 +276,32 @@ innerleftmargin=10pt, innertopmargin=6pt, innerbottommargin=6pt]{dangerbox}
 			\bottomrule
 		\end{tabular}
 	\end{table}
+	
+	\clearpage
+	% ================================================================
+	\begin{thebibliography}{9}
+		
+		\bibitem{ref:data}
+		Егоров К., \textit{1\_data\_v6.ipynb}: Инженерия признаков и Walk-Forward валидация, 2026.
+		
+		\bibitem{ref:train}
+		Егоров К., \textit{2\_train\_blend\_v6.ipynb}: Архитектура CatBoost, XGBoost, ZILN MLP и алгоритмы блендинга, 2026.
+		
+		\bibitem{ref:tests}
+		Егоров К., \textit{3\_extra\_tests.ipynb}: Расчет сезонного сдвига (Concept Drift) и постобработка, 2026.
+		
+		\bibitem{ref:report_old}
+		Егоров К., \textit{Отчёт по хакатону: LTV-предсказание} (\texttt{report\_2.pdf}), 2026.
+		
+		\bibitem{ref:google_ltv}
+		Google, \textit{Lifetime Value Library}, GitHub Repository, 2020. Доступно по адресу: \url{https://github.com/google/lifetime_value}
+		
+		\bibitem{ref:catboost}
+		Prokhorenkova, L., Gusev, G., Vorobev, A., Dorogush, A. V., \& Gulin, A. (2018). \textit{CatBoost: unbiased boosting with categorical features}. Advances in neural information processing systems, 31.
+		
+		\bibitem{ref:xgboost}
+		Chen, T., \& Guestrin, C. (2016). \textit{XGBoost: A scalable tree boosting system}. In Proceedings of the 22nd acm sigkdd international conference on knowledge discovery and data mining (pp. 785-794).
+		
+	\end{thebibliography}
 	
 \end{document}
